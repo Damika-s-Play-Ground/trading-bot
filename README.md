@@ -19,6 +19,7 @@ These root-level scripts are kept for compatibility:
 - `bot_deep_mr.py`
 - `bot_futures.py`
 - `dashboard.py`
+- `app.py`
 - `futures_dashboard.py`
 - `research_page.py`
 - `glossary.py`
@@ -48,8 +49,12 @@ The following remain at repo root so current automation does not break:
 ./venv/bin/python3.13 manager.py
 ./venv/bin/python3.13 bot_futures.py
 ./venv/bin/python3.13 dashboard.py
+./venv/bin/pip install -r requirements-web.txt
+./venv/bin/python3.13 app.py
 bash run_bot.sh
 ```
+
+The Flask app serves the generated pages at http://127.0.0.1:8008/dashboard.html and exposes lightweight JSON helpers like `/api/spot-summary` and `/api/refresh`.
 
 ## Scheduling
 Current Hermes cron scripts live outside this repo under `~/.hermes/scripts/` and update local files in this repo.

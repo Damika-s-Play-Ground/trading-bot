@@ -840,6 +840,107 @@ Example: You hold $1,000 of BTC
 
 **In our bots:** We don't hedge yet. The futures bot cluster would enable this — automatically shorting when DCA bot opens a long position.
 """),
+
+    ("Market Regime", "market", """
+**Market Regime** = The current personality of the market.
+
+```
+Common regimes:
+  📈 Bull      → trend is climbing, breakouts work better
+  📉 Bear      → trend is falling, defense matters more
+  ➡️ Sideways  → price chops in a range, mean reversion works better
+  ⚡ Volatile  → fast swings, position sizing should stay tighter
+```
+
+**Why it matters:** The same strategy can work great in one regime and poorly in another.
+
+**In our dashboard:** The top card labels the detected regime so you can interpret every trade and chart with the right context.
+"""),
+
+    ("Equity Curve", "performance", """
+**Equity Curve** = A line showing how total portfolio value changes over time.
+
+```
+Time 1  → $1,200
+Time 2  → $1,208
+Time 3  → $1,196
+Time 4  → $1,214
+
+Plot those points → you get the equity curve
+```
+
+**How to read it:**
+- Rising smoothly = steady compounding
+- Flat = little edge or little exposure
+- Sharp drops = drawdown / risk events
+- Choppy = unstable strategy behavior
+
+**In our dashboard:** The equity curve helps you judge the quality of the bot's progress, not just the latest portfolio number.
+"""),
+
+    ("Performance Journal", "performance", """
+**Performance Journal** = The time-stamped history of portfolio totals and snapshots used to build trend charts like the equity curve.
+
+```
+08:00 → $1,198
+12:00 → $1,204
+16:00 → $1,201
+20:00 → $1,214
+```
+
+**Why it matters:** Without a journal, you only see today's number. With it, you can see whether growth is smooth, noisy, or fading.
+
+**In our dashboard:** The equity curve reads from this journal so hover states, highs/lows, and recent direction all have historical context.
+"""),
+
+    ("Capital Allocation", "portfolio", """
+**Capital Allocation** = How you split total capital across strategies, bots, or assets.
+
+```
+Example with $1,200:
+  DCA + TP         20% → $240
+  Trend Following  10% → $120
+  Grid Trading     20% → $240
+  Momentum         15% → $180
+  Deep MR          35% → $420
+```
+
+**Why it matters:** Allocation controls exposure before any trade even happens.
+
+**In our dashboard:** The allocation chart and capital allocation section show where the portfolio is intentionally supposed to sit versus where it actually sits.
+"""),
+
+    ("Portfolio Contribution", "portfolio", """
+**Portfolio Contribution** = How much one coin, bot, or strategy adds to the total portfolio value.
+
+```
+If total portfolio = $1,200
+and AVAX position = $36
+
+Contribution = $36 / $1,200 = 3.0%
+```
+
+**Two useful views:**
+- **Amount contribution** → the dollar value it contributes
+- **Percentage contribution** → the share of the total portfolio
+
+**In our dashboard:** Each bot section now shows both the amount and percentage each coin contributes to the total portfolio.
+"""),
+
+    ("Drift", "portfolio", """
+**Drift** = The gap between your target allocation and your actual live allocation.
+
+```
+Target for bot:  $240
+Actual live:     $252
+
+Drift = ($252 - $240) / $240 = +5.0%
+```
+
+**Why it matters:** Drift tells you when one strategy is taking up more or less capital than planned.
+
+**In our dashboard:** A small drift is normal. A large drift is a signal to rebalance or inspect why that bot is dominating capital.
+"""),
 ]
 
 # Build HTML
@@ -1026,6 +1127,7 @@ html = f"""<!DOCTYPE html>
             <button class="filter-btn" data-cat="indicators" onclick="document.querySelectorAll('.filter-btn').forEach(b=>b.classList.remove('active'));this.classList.add('active');filterTerms()">📈 Indicators</button>
             <button class="filter-btn" data-cat="risk" onclick="document.querySelectorAll('.filter-btn').forEach(b=>b.classList.remove('active'));this.classList.add('active');filterTerms()">🛡️ Risk</button>
             <button class="filter-btn" data-cat="market" onclick="document.querySelectorAll('.filter-btn').forEach(b=>b.classList.remove('active'));this.classList.add('active');filterTerms()">📊 Market</button>
+            <button class="filter-btn" data-cat="portfolio" onclick="document.querySelectorAll('.filter-btn').forEach(b=>b.classList.remove('active'));this.classList.add('active');filterTerms()">📦 Portfolio</button>
             <button class="filter-btn" data-cat="strategy" onclick="document.querySelectorAll('.filter-btn').forEach(b=>b.classList.remove('active'));this.classList.add('active');filterTerms()">🧠 Strategy</button>
             <button class="filter-btn" data-cat="trading" onclick="document.querySelectorAll('.filter-btn').forEach(b=>b.classList.remove('active'));this.classList.add('active');filterTerms()">💱 Trading</button>
             <button class="filter-btn" data-cat="performance" onclick="document.querySelectorAll('.filter-btn').forEach(b=>b.classList.remove('active'));this.classList.add('active');filterTerms()">🎯 Performance</button>
