@@ -1,0 +1,64 @@
+# === Binance Trading Bot Config ===
+
+# Strategy: Smart DCA + Take-Profit
+
+# Coins to track (your top holdings)
+coins:
+  - BTC
+  - ETH
+  - SOL
+  - BNB
+  - XRP
+  - LINK
+  - ADA
+  - AVAX
+  - DOT
+  - NEAR
+  - ARB
+  - OP
+  - AAVE
+  - IMX
+  - ALGO
+  - FIL
+  - GRT
+  - VET
+  - HBAR
+  - XLM
+  - ATOM
+  - SUI
+  - HEI
+
+# DCA Parameters
+dca:
+  max_positions: 8          # Max coins to hold at once
+  buy_per_trade: 5.0        # USDT per buy
+  max_spend_per_day: 40.0   # Max USDT to spend daily
+  rsi_oversold: 30          # Buy when RSI below this
+  rsi_period: 14            # RSI calculation period
+
+# Take-Profit & Stop-Loss
+tp_sl:
+  take_profit_pct: 8.0      # Sell when +8% profit
+  stop_loss_pct: -10.0      # Sell when -10% loss
+  trailing_stop: true       # Use trailing stop
+  trailing_activation: 4.0  # Activate trail at +4%
+  trailing_distance: 2.0    # Trail stays 2% below peak
+
+# Risk Management
+risk:
+  max_daily_loss_pct: -3.0  # Pause bot if -3% in a day
+  max_drawdown_pct: -15.0   # Pause bot if -15% from peak
+  reserve_pct: 30           # Keep 30% in USDT always
+
+# Market Filters
+filters:
+  trend_ma_period: 50       # Only buy if price > 50 MA (uptrend)
+  min_volume_usdt: 100000   # Minimum 24h volume to consider
+  max_spread_pct: 0.5       # Max bid/ask spread %
+
+# Paper Trading
+paper_trading: true
+initial_balance: 1200.0     # Starting paper balance (matches real portfolio)
+
+# Mode
+mode: "paper"               # "paper" or "live"

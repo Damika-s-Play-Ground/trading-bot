@@ -1,0 +1,27 @@
+__pycache__/
+*.pyc
+venv/
+.env
+.env.local
+.DS_Store
+*.log
+htmlcov/
+.pytest_cache/
+.mypy_cache/
+*.tmp
+*.bak
+
+# Generated dashboards
+/dashboard.html
+/cron.html
+/futures.html
+/research.html
+/glossary.html
+
+# Runtime state (keep local by default)
+/paper_*.json
+/manager_state.json
+/manager_portfolio.json
+/performance_journal.json
+/market_data.json
+/logs/cron.json

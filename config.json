@@ -1,0 +1,51 @@
+{
+  "coins": ["BTC","ETH","SOL","BNB","XRP","LINK","ADA","AVAX","DOT","NEAR","ARB","OP","AAVE","IMX","ALGO","FIL","GRT","VET","HBAR","XLM","ATOM"],
+  "weights": {
+    "performance_weighting": true,
+    "tiers": {
+      "tier1_weight": 2.0,
+      "tier2_weight": 1.5,
+      "tier3_weight": 1.0,
+      "tier4_weight": 0.5
+    },
+    "tier1": ["NEAR", "BTC"],
+    "tier2": ["ALGO", "ATOM", "HBAR", "BNB", "LINK"],
+    "tier3": ["ETH", "SOL", "XRP", "AVAX", "DOT", "IMX", "FIL", "XLM", "GRT"],
+    "tier4": ["OP", "ADA", "ARB", "AAVE", "VET"]
+  },
+  "dca": {
+    "max_positions": 8,
+    "buy_per_trade": 5.0,
+    "max_spend_per_day": 40.0,
+    "rsi_oversold": 30,
+    "rsi_period": 14
+  },
+  "tp_sl": {
+    "take_profit_tiers": [
+      {"pct": 8.0, "sell_fraction": 0.5},
+      {"pct": 15.0, "sell_fraction": 0.5}
+    ],
+    "stop_loss_pct": -10.0,
+    "trailing_stop": true,
+    "trailing_activation": 4.0,
+    "trailing_distance": 2.0
+  },
+  "risk": {
+    "max_daily_loss_pct": -3.0,
+    "max_drawdown_pct": -15.0,
+    "reserve_pct": 30
+  },
+  "filters": {
+    "trend_ma_period": 50,
+    "use_trend_filter": false,
+    "use_volume_filter": true,
+    "min_volume_usdt": 1000,
+    "max_spread_pct": 0.5,
+    "fear_greed_max": 70,
+    "fear_greed_boost": 25,
+    "fear_greed_boost_multiplier": 1.5
+  },
+  "paper_trading": true,
+  "initial_balance": 1200.0,
+  "mode": "paper"
+}
