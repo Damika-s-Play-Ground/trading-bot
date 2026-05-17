@@ -5,9 +5,20 @@ Concise multi-strategy paper-trading repo for spot + futures experiments.
 ## What this repo does
 - Runs five spot paper bots under a central adaptive manager.
 - Runs a separate futures paper bot.
-- Regenerates HTML dashboards for spot, futures, research, glossary, and cron health.
-- Stores local state in JSON files at the repo root.
+- Regenerates dashboards for spot, futures, research, glossary, cron health, and roadmap/TODO views.
+- Serves a lightweight Flask + Vue dashboard shell for faster live inspection and better UI/UX.
+- Stores generated analytics and synced dashboard state in SQLite plus repo-root JSON files.
 - Uses Hermes cron scripts outside the repo to schedule recurring runs.
+
+## Recent upgrades
+- Spot dashboard moved to a lightweight Flask-served Vue frontend.
+- Recent Trades now shows cleaner reason text plus RSI, MACD, moving-average, and volume snapshots when available.
+- Bot cards now expand into deeper drill-down panels for stats, live signals, positions, and recent trade reasons.
+- Chart hover behavior is now consistent across allocation, equity-curve, and activity charts.
+- Equity curve readability improved with cleaner axes, hover states, and gradient fill.
+- TODO completion state now persists in the dashboard SQLite store instead of only browser localStorage.
+- Cron health now warns on missed cadence, not just stale status.
+- Glossary updated to explain new dashboard/store/cron concepts.
 
 ## Stable entrypoints
 These root-level scripts are kept for compatibility:
@@ -23,6 +34,7 @@ These root-level scripts are kept for compatibility:
 - `futures_dashboard.py`
 - `research_page.py`
 - `glossary.py`
+- `todo.py`
 - `run_bot.sh`
 
 They now act as thin wrappers around the organized package under `trading_bot/`.
@@ -30,10 +42,12 @@ They now act as thin wrappers around the organized package under `trading_bot/`.
 ## Package layout
 - `trading_bot/core/` — manager and shared runtime helpers
 - `trading_bot/bots/` — spot and futures bot implementations
-- `trading_bot/dashboards/` — HTML generators
+- `trading_bot/dashboards/` — HTML generators, Flask/Vue dashboard payloads, and shared data-store logic
 - `trading_bot/analysis/` — backtests, sweeps, optimizer, data pipeline
+- `static/` — dashboard frontend assets (`dashboard-app.js`, `dashboard.css`, vendored Vue runtime)
 - `docs/` — concise codebase documentation
 - `logs/` — cron/job health logs
+- `data/` — SQLite dashboard state and generated analytics cache
 
 ## State and generated files
 The following remain at repo root so current automation does not break:
@@ -42,19 +56,71 @@ The following remain at repo root so current automation does not break:
 - `manager_portfolio.json`
 - `performance_journal.json`
 - `market_data.json`
-- `dashboard.html`, `cron.html`, `futures.html`, `research.html`, `glossary.html`
+- `dashboard.html`, `cron.html`, `futures.html`, `research.html`, `glossary.html`, `todo.html`
 
-## Run
+Persistent dashboard data lives in:
+- `data/dashboard.sqlite`
+
+## Install
+```bash
+./venv/bin/pip install -r requirements.txt
+./venv/bin/pip install -r requirements-web.txt
+```
+
+## Common commands
+
+### Run the spot/futures logic
 ```bash
 ./venv/bin/python3.13 manager.py
 ./venv/bin/python3.13 bot_futures.py
-./venv/bin/python3.13 dashboard.py
-./venv/bin/pip install -r requirements-web.txt
-./venv/bin/python3.13 app.py
 bash run_bot.sh
 ```
 
-The Flask app serves the generated pages at http://127.0.0.1:8008/dashboard.html and exposes lightweight JSON helpers like `/api/spot-summary` and `/api/refresh`.
+### Regenerate dashboard pages
+```bash
+./venv/bin/python3.13 dashboard.py
+./venv/bin/python3.13 futures_dashboard.py
+./venv/bin/python3.13 research_page.py
+./venv/bin/python3.13 glossary.py
+./venv/bin/python3.13 todo.py
+```
+
+### Run the dashboard backend
+```bash
+./venv/bin/python3.13 app.py
+```
+
+Open:
+- `http://127.0.0.1:8008/dashboard.html`
+
+### One-line local launch in Chrome
+```bash
+./venv/bin/python3.13 app.py &
+open -a "Google Chrome" http://127.0.0.1:8008/dashboard.html
+```
+
+## Useful endpoints
+- `/dashboard.html` — main spot dashboard
+- `/futures.html` — futures dashboard
+- `/research.html` — research page
+- `/todo.html` — roadmap/TODO board
+- `/cron.html` — cron status and history
+- `/glossary.html` — glossary
+- `/api/dashboard-data` — live dashboard payload for the Vue UI
+- `/api/spot-summary` — compact spot summary JSON
+- `/api/todo-state` — synced TODO state overrides
+- `/api/refresh` — regenerate all pages from the running Flask app
+- `/healthz` — simple app health check
+
+## Local smoke-test flow
+```bash
+./venv/bin/python3.13 -m py_compile app.py trading_bot/dashboards/dashboard_backend.py trading_bot/dashboards/data_store.py trading_bot/dashboards/spot_dashboard.py trading_bot/dashboards/todo_page.py trading_bot/dashboards/glossary.py
+./venv/bin/python3.13 dashboard.py
+./venv/bin/python3.13 todo.py
+./venv/bin/python3.13 glossary.py
+node --check static/dashboard-app.js
+curl http://127.0.0.1:8008/healthz
+```
 
 ## Scheduling
 Current Hermes cron scripts live outside this repo under `~/.hermes/scripts/` and update local files in this repo.
