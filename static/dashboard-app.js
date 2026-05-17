@@ -221,7 +221,7 @@ createApp({
     <div class="page-header">
       <div>
         <h1 class="page-title">📊 Multi-Bot Trading Dashboard</h1>
-        <p class="page-subtitle">Vue-powered Flask dashboard with live portfolio analytics, drill-down bot cards, synced TODO state, richer recent-trade snapshots, and stronger cron health checks.</p>
+        <p class="page-subtitle">Vue-powered Flask dashboard with live portfolio analytics, cleaner drill-down bot cards, synced TODO state, and denser recent-trade snapshots.</p>
       </div>
       <div class="header-actions">
         <button class="btn" @click="refreshPages" :disabled="refreshBusy">{{ refreshBusy ? 'Refreshing…' : 'Refresh generated pages' }}</button>
@@ -371,7 +371,7 @@ createApp({
         <div class="section-head">
           <div>
             <h2>🤖 Bot cards with drill-downs</h2>
-            <div class="section-note">Cards stay compact by default, show value/share up front, and only open one drill-down at a time for faster scanning.</div>
+            <div class="section-note">Cards stay compact by default, show value/share up front, and open without stretching neighboring cards in the same row.</div>
           </div>
         </div>
         <div class="bots-grid">
@@ -420,6 +420,10 @@ createApp({
                 <div class="v">{{ bot.last_trade.coin || '—' }} {{ bot.last_trade.action || '' }}</div>
                 <div class="s">{{ relativeTime(bot.last_trade.time) }} · tap for drill-down</div>
               </div>
+            </div>
+            <div class="bot-drilldown-toggle">
+              <span>{{ isExpanded(bot.key) ? 'Hide details' : 'Show details' }}</span>
+              <span class="caret">▾</span>
             </div>
 
             <div v-if="isExpanded(bot.key)" class="bot-expand" @click.stop>
@@ -526,54 +530,31 @@ createApp({
                 <span class="badge" v-if="trade.pnl !== null && trade.pnl !== undefined" :class="trade.pnl >= 0 ? 'green' : 'red'">PnL {{ formatMoney(trade.pnl) }}</span>
               </div>
             </div>
-            <div class="trade-reason">{{ trade.reason }}</div>
-            <div class="indicator-grid" v-if="trade.indicators">
-              <div class="indicator-card">
-                <div class="indicator-label">RSI</div>
-                <div class="indicator-value">{{ Number(trade.indicators.rsi).toFixed(1) }}</div>
-                <div class="indicator-sub">Momentum pressure</div>
+            <div class="trade-row-body">
+              <div class="trade-reason">{{ trade.reason }}</div>
+              <div class="indicator-grid" v-if="trade.indicators">
+                <div class="indicator-card">
+                  <div class="indicator-label">RSI</div>
+                  <div class="indicator-value">{{ Number(trade.indicators.rsi).toFixed(1) }}</div>
+                  <div class="indicator-sub">Momentum pressure</div>
+                </div>
+                <div class="indicator-card">
+                  <div class="indicator-label">MACD hist</div>
+                  <div class="indicator-value" :class="indicatorTone(trade.indicators.macd_hist, 'macd')">{{ Number(trade.indicators.macd_hist).toFixed(4) }}</div>
+                  <div class="indicator-sub">vs signal {{ Number(trade.indicators.macd_signal).toFixed(4) }}</div>
+                </div>
+                <div class="indicator-card">
+                  <div class="indicator-label">MA context</div>
+                  <div class="indicator-value">20 {{ formatMoney(trade.indicators.ma20, trade.indicators.ma20 < 1 ? 5 : 2) }}</div>
+                  <div class="indicator-sub">50 {{ formatMoney(trade.indicators.ma50, trade.indicators.ma50 < 1 ? 5 : 2) }}</div>
+                </div>
+                <div class="indicator-card">
+                  <div class="indicator-label">Volume</div>
+                  <div class="indicator-value" :class="indicatorTone(trade.indicators.volume_ratio, 'vol')">{{ Number(trade.indicators.volume_ratio).toFixed(2) }}x</div>
+                  <div class="indicator-sub">{{ formatMoney(trade.indicators.volume, 0) }} vs 20-bar avg</div>
+                </div>
               </div>
-              <div class="indicator-card">
-                <div class="indicator-label">MACD hist</div>
-                <div class="indicator-value" :class="indicatorTone(trade.indicators.macd_hist, 'macd')">{{ Number(trade.indicators.macd_hist).toFixed(4) }}</div>
-                <div class="indicator-sub">vs signal {{ Number(trade.indicators.macd_signal).toFixed(4) }}</div>
-              </div>
-              <div class="indicator-card">
-                <div class="indicator-label">MA context</div>
-                <div class="indicator-value">20 {{ formatMoney(trade.indicators.ma20, trade.indicators.ma20 < 1 ? 5 : 2) }}</div>
-                <div class="indicator-sub">50 {{ formatMoney(trade.indicators.ma50, trade.indicators.ma50 < 1 ? 5 : 2) }}</div>
-              </div>
-              <div class="indicator-card">
-                <div class="indicator-label">Volume</div>
-                <div class="indicator-value" :class="indicatorTone(trade.indicators.volume_ratio, 'vol')">{{ Number(trade.indicators.volume_ratio).toFixed(2) }}x</div>
-                <div class="indicator-sub">{{ formatMoney(trade.indicators.volume, 0) }} vs 20-bar avg</div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div class="section-card">
-        <div class="section-head">
-          <div>
-            <h2>⏱ Cron health</h2>
-            <div class="section-note">Cadence-aware rules now flag jobs that miss their expected interval instead of only showing a stale badge.</div>
-          </div>
-        </div>
-        <div class="cron-grid">
-          <div class="cron-card" v-for="job in cronJobs" :key="job.job_key">
-            <div class="cron-top">
-              <div class="cron-name">{{ job.name }}</div>
-              <span :class="cronSeverityClass(job.severity)">{{ job.severity }}</span>
-            </div>
-            <div class="section-note" style="margin-bottom:10px">{{ job.message }}</div>
-            <div class="cron-meta">
-              <div class="k">Schedule</div><div>{{ job.schedule }}</div>
-              <div class="k">Expected cadence</div><div>{{ job.expected_minutes ? job.expected_minutes + 'm' : '—' }}</div>
-              <div class="k">Missed runs</div><div>{{ job.missed_runs }}</div>
-              <div class="k">Latest status</div><div>{{ job.latest_status }}</div>
-              <div class="k">Last run</div><div>{{ relativeTime(job.last_run_at) }}</div>
-              <div class="k">Details</div><div>{{ job.details }}</div>
+              <div v-else class="empty-state">Indicator snapshot unavailable for this trade.</div>
             </div>
           </div>
         </div>

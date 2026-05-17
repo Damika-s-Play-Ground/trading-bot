@@ -300,16 +300,25 @@ def _classify_todo(text: str, section: str) -> str:
     return "product"
 
 
-def _parse_summary_items(path: Path = SUMMARY_FILE) -> list[dict[str, Any]]:
+def _parse_summary_items(path: Path) -> list[dict[str, Any]]:
     if not path.exists():
         return []
-    lines = path.read_text().splitlines()
-    items: list[dict[str, Any]] = []
-    section = ""
+    lines = path.read_text(encoding="utf-8", errors="ignore").splitlines()
+    section = None
+    stop_markers = {
+        "what the original staged plan was",
+        "what has been achieved so far",
+        "what is not fully achieved yet",
+        "recommended next build order",
+    }
+    items = []
     sort_order = 0
     for raw in lines:
         line = raw.strip()
         if not line:
+            continue
+        if line.lower() in stop_markers:
+            section = None
             continue
         if line.lower().startswith("what’s done") or line.lower().startswith("what's done"):
             section = "done"
@@ -349,7 +358,9 @@ def _parse_summary_items(path: Path = SUMMARY_FILE) -> list[dict[str, Any]]:
 def sync_todo_items(path: Path = SUMMARY_FILE) -> int:
     items = _parse_summary_items(path)
     count = 0
+    source_file = str(path)
     with _connect() as conn:
+        conn.execute("DELETE FROM todo_items WHERE source_file = ?", (source_file,))
         for item in items:
             item_key = _hash_key(item.get("section", ""), item.get("text", ""), str(item.get("sort_order", 0)))
             payload = dict(item)
@@ -366,11 +377,14 @@ def sync_todo_items(path: Path = SUMMARY_FILE) -> int:
                     item.get("sort_order", 0),
                     item.get("text"),
                     item.get("notes"),
-                    item.get("source_file"),
+                    source_file,
                     json.dumps(payload, ensure_ascii=False),
                 ),
             )
             count += 1
+        conn.execute(
+            "DELETE FROM todo_state_overrides WHERE item_key NOT IN (SELECT item_key FROM todo_items)"
+        )
     return count
 
 

@@ -1007,7 +1007,7 @@ html = f"""<!DOCTYPE html>
         .page-header {{ margin-bottom:18px; }}
         h1 {{ font-size:28px; line-height:1.15; margin-bottom:6px; font-weight:800; letter-spacing:-0.02em; }}
         .subtitle {{ color:#94a3b8; font-size:14px; line-height:1.65; margin-bottom:0; max-width:920px; }}
-        .nav {{ display:flex; gap:10px; margin:0 0 24px; flex-wrap:wrap; padding:6px; border-radius:18px; background:rgba(15,23,42,.78); border:1px solid #243244; box-shadow:0 14px 34px rgba(15,23,42,.22); overflow-x:auto; scrollbar-width:none; }}
+        .nav {{ position:sticky; top:12px; z-index:30; display:flex; gap:10px; margin:0 0 24px; flex-wrap:wrap; padding:6px; border-radius:18px; background:rgba(15,23,42,.74); border:1px solid #243244; box-shadow:0 10px 24px rgba(15,23,42,.18); overflow-x:auto; scrollbar-width:none; backdrop-filter:blur(14px) saturate(1.05); -webkit-backdrop-filter:blur(14px) saturate(1.05); }}
         .nav::-webkit-scrollbar {{ display:none; }}
         .nav a {{ display:inline-flex; align-items:center; justify-content:center; min-height:42px; padding:10px 16px; border-radius:12px; background:transparent; color:#94a3b8;
                  text-decoration:none; font-size:13px; font-weight:600; white-space:nowrap; border:1px solid transparent; transition:background .18s ease, border-color .18s ease, color .18s ease, transform .18s ease; }}
