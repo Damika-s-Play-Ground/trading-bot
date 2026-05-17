@@ -8,15 +8,12 @@ from pathlib import Path
 
 from flask import Flask, abort, jsonify, redirect, request, send_from_directory
 
-from trading_bot.dashboards.spot_dashboard import (
-    MANAGER_FILE,
-    fetch_prices,
-    load_cron_runs,
-    load_json,
-    load_spot_data,
-)
+from trading_bot.dashboards.dashboard_backend import dashboard_payload
+from trading_bot.dashboards.data_store import load_todo_state_overrides, save_todo_state
+from trading_bot.dashboards.spot_dashboard import MANAGER_FILE, fetch_prices, load_cron_runs, load_json, load_spot_data
 
 REPO_ROOT = Path(__file__).resolve().parent
+STATIC_DIR = REPO_ROOT / "static"
 PAGES = {
     "dashboard.html",
     "cron.html",
@@ -118,6 +115,27 @@ def api_spot_summary():
     return jsonify(spot_summary())
 
 
+@app.get("/api/dashboard-data")
+def api_dashboard_data():
+    return jsonify(dashboard_payload())
+
+
+@app.get("/api/todo-state")
+def api_todo_state_get():
+    return jsonify({"items": load_todo_state_overrides()})
+
+
+@app.post("/api/todo-state")
+def api_todo_state_post():
+    payload = request.get_json(silent=True) or {}
+    item_key = str(payload.get("item_key", "")).strip()
+    status = str(payload.get("status", "open")).strip().lower()
+    if not item_key:
+        return jsonify({"ok": False, "error": "item_key is required"}), 400
+    saved = save_todo_state(item_key=item_key, status=status, source="dashboard")
+    return jsonify({"ok": True, "item": saved})
+
+
 @app.post("/api/refresh")
 def api_refresh():
     if not _is_local_request():
@@ -130,6 +148,11 @@ def api_refresh():
 @app.get("/api/refresh")
 def api_refresh_get():
     abort(405)
+
+
+@app.get("/static/<path:filename>")
+def serve_static(filename: str):
+    return send_from_directory(STATIC_DIR, filename)
 
 
 @app.get("/<path:page>")

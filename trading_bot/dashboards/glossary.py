@@ -941,6 +941,37 @@ Drift = ($252 - $240) / $240 = +5.0%
 
 **In our dashboard:** A small drift is normal. A large drift is a signal to rebalance or inspect why that bot is dominating capital.
 """),
+
+    ("Missed Cadence", "performance", """
+**Missed Cadence** = A scheduled job running later than its expected interval.
+
+```
+Expected: every 30 minutes
+Actual:   last successful run was 48 minutes ago
+
+Missed cadence = 18 minutes late
+```
+
+**Why it matters:** A bot can look merely "stale" while actually skipping one or more expected runs. Cadence checks tell you whether automation is slipping.
+
+**In our dashboard:** Cron health now warns when a job runs beyond its normal schedule instead of only showing a stale badge.
+"""),
+
+    ("Dashboard Store", "performance", """
+**Dashboard Store** = The SQLite-backed data layer that keeps dashboard history, cron logs, research items, and synced TODO state in one place.
+
+```
+performance_runs
+cron_runs
+research_items
+todo_items
+todo_state_overrides
+```
+
+**Why it matters:** It lets the dashboard keep state beyond one browser tab or one localStorage entry.
+
+**In our dashboard:** TODO completion sync now writes into the dashboard store so open/done state survives across sessions and browsers.
+"""),
 ]
 
 # Build HTML

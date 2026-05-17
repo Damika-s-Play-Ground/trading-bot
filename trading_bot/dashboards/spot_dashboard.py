@@ -563,279 +563,39 @@ def build_shared_style(active_color="#3b82f6"):
 
 
 def build_spot_page(manager_state, prices, spot_data, cron_runs):
-    allocations_html = build_allocation_rows(spot_data["cards"])
-    cards_html = build_bot_cards(spot_data["cards"], spot_data["total_portfolio"])
-    trades_html = build_recent_trades_html(spot_data["recent_trades"], manager_state)
-    all_positions_json = json.dumps(spot_data["all_positions"])
-    regime = manager_state.get("regime", "sideways")
-    regime_display = REGIME_ICONS.get(regime, "➡️ SIDEWAYS")
-    cron_count = len(cron_runs)
-    performance_runs = load_performance_runs(40)
-    insights_html = build_dashboard_insights(spot_data["cards"], performance_runs)
+    from trading_bot.dashboards.dashboard_backend import build_dashboard_shell
 
-    html = f'''<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta http-equiv="refresh" content="120">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Spot Dashboard</title>
-    <style>{build_shared_style('#3b82f6')}</style>
-</head>
-<body>
-    <h1>🤖 Multi-Bot Trading System</h1>
-    <p class="subtitle">5 spot bots · 1 portfolio · live prices update every 30s</p>
-    {nav('spot')}
-
-    <div class="section-card" style="margin-bottom:20px;padding:14px 18px;">
-        <div style="display:flex;justify-content:space-between;gap:12px;align-items:center;flex-wrap:wrap;">
-            <div>
-                <div class="section-kicker">Lightweight Flask dashboard</div>
-                <div class="mini-note">Served fast from app.py with static pages + JSON endpoints for refresh actions.</div>
-            </div>
-            <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
-                <button id="dashboard-refresh-btn" style="border:1px solid #334155;background:#0f172a;color:#e2e8f0;border-radius:10px;padding:8px 12px;cursor:pointer;font-size:12px;">Refresh generated pages</button>
-                <span class="mini-note" id="dashboard-refresh-status">Live price polling active</span>
-            </div>
-        </div>
-    </div>
-
-    <div class="top-row">
-        <div class="top-card">
-            <div class="label">Total Portfolio <span class="live-dot"></span><span class="green">LIVE</span></div>
-            <div class="value" id="total-portfolio-value">{fmt_money(spot_data['total_portfolio'])}</div>
-            <div class="sub">All 5 spot bots combined</div>
-        </div>
-        <div class="top-card">
-            <div class="label">Market Regime</div>
-            <div class="regime-badge regime-{regime}">{regime_display}</div>
-            <div class="sub">Detected from BTC price structure</div>
-        </div>
-        <div class="top-card">
-            <div class="label">Activity</div>
-            <div class="value" style="font-size:22px;">{spot_data['total_trades']} trades</div>
-            <div class="sub">{spot_data['total_positions']} open positions across 5 bots</div>
-        </div>
-    </div>
-
-    {insights_html}
-
-    <div class="section-card" style="margin-bottom:20px;">
-        <div style="display:flex;justify-content:space-between;gap:12px;align-items:center;margin-bottom:10px;flex-wrap:wrap;">
-            <strong>📊 Capital Allocation</strong>
-            <span class="mini-note">Target ratio + live current capital + drift per bot</span>
-        </div>
-        {allocations_html}
-    </div>
-
-    <div class="bot-grid">
-        {cards_html}
-    </div>
-
-    <div class="trade-log-section">
-        <div style="display:flex;justify-content:space-between;gap:12px;align-items:center;margin-bottom:10px;flex-wrap:wrap;">
-            <strong>🔄 Recent Trades</strong>
-            <span class="mini-note">Shows the latest BUY/SELL actions across all 5 spot bots</span>
-        </div>
-        {trades_html}
-    </div>
-
-    <script>
-    const allPositions = {all_positions_json};
-
-    function getTotalCash() {{
-        let totalCash = 0;
-        document.querySelectorAll('.usdt-cash').forEach(cashEl => {{ totalCash += parseFloat(cashEl.dataset.usdt || 0); }});
-        return totalCash;
-    }}
-
-    function renderBotContributionTotals(totalPortfolioValue) {{
-        const botTotals = {{}};
-        document.querySelectorAll('.bot-card').forEach(card => {{
-            botTotals[card.dataset.botName] = parseFloat(card.dataset.botCash || 0);
-        }});
-        allPositions.forEach(position => {{
-            botTotals[position.bot] = (botTotals[position.bot] || 0) + ((position.current || 0) * (position.qty || 0));
-        }});
-        document.querySelectorAll('.bot-card').forEach(card => {{
-            const botTotal = botTotals[card.dataset.botName] || 0;
-            const pct = totalPortfolioValue > 0 ? (botTotal / totalPortfolioValue * 100) : 0;
-            const totalEl = card.querySelector('[data-bot-total]');
-            const pctEl = card.querySelector('[data-bot-contribution-pct]');
-            const amtEl = card.querySelector('[data-bot-contribution-amt]');
-            if (totalEl) totalEl.textContent = '$' + botTotal.toFixed(2);
-            if (pctEl) pctEl.textContent = pct.toFixed(1) + '%';
-            if (amtEl) amtEl.textContent = '$' + botTotal.toFixed(2);
-        }});
-    }}
-
-    function renderPositions() {{
-        const grouped = {{}};
-        allPositions.forEach(p => {{
-            if (!grouped[p.bot]) grouped[p.bot] = [];
-            grouped[p.bot].push(p);
-        }});
-        const totalPortfolioValue = allPositions.reduce((sum, position) => sum + ((position.current || 0) * (position.qty || 0)), 0) + getTotalCash();
-        renderBotContributionTotals(totalPortfolioValue);
-        const botKeyMap = {{
-            'DCA + TP': 'positions-dca',
-            'Trend Following': 'positions-trend',
-            'Grid Trading': 'positions-grid',
-            'Momentum': 'positions-momentum',
-            'Deep MR': 'positions-deep_mr',
-        }};
-        Object.entries(botKeyMap).forEach(([name, id]) => {{
-            const el = document.getElementById(id);
-            if (!el) return;
-            const rows = grouped[name] || [];
-            if (!rows.length) {{
-                el.innerHTML = '<span class="empty-box" style="padding:0;">No positions</span>';
-                return;
-            }}
-            el.innerHTML = rows.map(p => {{
-                const pct = p.avg > 0 ? ((p.current - p.avg) / p.avg * 100) : 0;
-                const cls = pct >= 0 ? 'green' : 'red';
-                const value = (p.current || 0) * (p.qty || 0);
-                const share = totalPortfolioValue > 0 ? (value / totalPortfolioValue * 100) : 0;
-                return `<div class="position-row"><div class="position-main"><span class="position-coin">${{p.coin}}</span><span class="position-pnl ${{cls}}">${{pct.toFixed(1)}}%</span><span class="position-meta">Avg $${{p.avg.toFixed(4)}} · Qty ${{p.qty.toFixed(4)}}</span></div><div><div class="position-value">$${{value.toFixed(2)}}</div><div class="position-share">Contributes $${{value.toFixed(2)}} · ${{share.toFixed(2)}}% of portfolio</div></div></div>`;
-            }}).join('');
-        }});
-    }}
-
-    function setupChartTooltips() {{
-        const tooltip = document.createElement('div');
-        tooltip.className = 'chart-tooltip';
-        document.body.appendChild(tooltip);
-
-        const moveTooltip = (event, explicitX, explicitY) => {{
-            const x = explicitX ?? event?.clientX ?? 0;
-            const y = explicitY ?? event?.clientY ?? 0;
-            tooltip.style.transform = `translate(${{x + 14}}px, ${{y + 16}}px)`;
-        }};
-
-        document.querySelectorAll('[data-tooltip]').forEach(node => {{
-            const show = (event) => {{
-                tooltip.textContent = node.dataset.tooltip || '';
-                tooltip.classList.add('visible');
-                if (event?.type === 'focus') {{
-                    const rect = node.getBoundingClientRect();
-                    moveTooltip(null, rect.left + rect.width / 2, rect.top + 12);
-                    return;
-                }}
-                moveTooltip(event);
-            }};
-            node.addEventListener('mouseenter', show);
-            node.addEventListener('mousemove', moveTooltip);
-            node.addEventListener('focus', show);
-            node.addEventListener('blur', () => tooltip.classList.remove('visible'));
-            node.addEventListener('mouseleave', () => tooltip.classList.remove('visible'));
-        }});
-    }}
-
-    async function triggerDashboardRefresh() {{
-        const statusEl = document.getElementById('dashboard-refresh-status');
-        const btn = document.getElementById('dashboard-refresh-btn');
-        if (!statusEl || !btn || !window.location.origin.startsWith('http')) return;
-        btn.disabled = true;
-        statusEl.textContent = 'Refreshing generated pages…';
-        try {{
-            const resp = await fetch('/api/refresh', {{ method: 'POST' }});
-            const payload = await resp.json();
-            statusEl.textContent = payload?.ok ? 'Refresh complete. Reload page to pull regenerated HTML.' : 'Refresh failed. Check terminal logs.';
-        }} catch (error) {{
-            console.log('dashboard refresh failed', error);
-            statusEl.textContent = 'Refresh request failed.';
-        }} finally {{
-            btn.disabled = false;
-        }}
-    }}
-
-    async function updateLivePrices() {{
-        try {{
-            const resp = await fetch('https://api.binance.com/api/v3/ticker/price');
-            const data = await resp.json();
-            const prices = {{}};
-            data.forEach(p => prices[p.symbol] = parseFloat(p.price));
-            let livePosVal = 0;
-            allPositions.forEach(p => {{
-                p.current = prices[p.coin + 'USDT'] || 0;
-                livePosVal += p.qty * p.current;
-            }});
-            renderPositions();
-            const totalEl = document.getElementById('total-portfolio-value');
-            if (totalEl) totalEl.textContent = '$' + (livePosVal + getTotalCash()).toFixed(2);
-        }} catch (e) {{
-            console.log('live update failed', e);
-        }}
-    }}
-
-    window.addEventListener('load', () => {{
-        renderPositions();
-        setupChartTooltips();
-        updateLivePrices();
-        setInterval(updateLivePrices, 30000);
-        document.getElementById('dashboard-refresh-btn')?.addEventListener('click', triggerDashboardRefresh);
-        document.querySelectorAll('.bot-card').forEach(card => {{
-            card.addEventListener('click', () => {{
-                const target = document.getElementById(card.dataset.toggle);
-                if (!target) return;
-                target.style.display = (!target.style.display || target.style.display === 'none') ? 'block' : 'none';
-            }});
-        }});
-    }});
-    </script>
-</body>
-</html>'''
-    SPOT_OUTPUT.write_text(html)
+    build_dashboard_shell()
 
 
 def build_cron_job_cards(runs):
-    latest_by_job = {}
-    for run in runs:
-        job = run.get("job")
-        if job and job not in latest_by_job:
-            latest_by_job[job] = run
+    from trading_bot.dashboards.dashboard_backend import _cron_summary
 
-    research_file_dt = None
-    if RESEARCH_FILE.exists():
-        research_file_dt = datetime.fromtimestamp(RESEARCH_FILE.stat().st_mtime, tz=timezone.utc)
-
+    summaries = _cron_summary(runs)
     cards = []
-    for job_key, meta in CRON_JOBS.items():
-        run = latest_by_job.get(job_key)
-        max_age = 2700 if job_key == "trading-bot" else 600
-        icon, css, label = cron_status(run, max_age)
+    for summary in summaries:
+        severity = summary.get("severity", "warning")
+        label = summary.get("message", "No runs logged yet")
+        icon = "🟢" if severity == "ok" else ("🟡" if severity == "warning" else "🔴")
         rows = [
-            ("Job ID", meta["job_id"]),
-            ("Schedule", meta["schedule"]),
-            ("Mode", meta["mode"]),
-            ("Delivery", meta["deliver"]),
-            ("Script", meta["script"]),
-            ("Purpose", meta["details"]),
+            ("Job ID", summary.get("job_id", "")),
+            ("Schedule", summary.get("schedule", "")),
+            ("Expected cadence", f"{summary.get('expected_minutes')}m" if summary.get("expected_minutes") else "—"),
+            ("Missed runs", str(summary.get("missed_runs", 0))),
+            ("Latest status", summary.get("latest_status", "—")),
+            ("Last run", summary.get("last_run_at", "—")),
+            ("Purpose", summary.get("details", "")),
         ]
-        if run:
-            dt = parse_time(run.get("timestamp"))
-            rows.append(("Last log", f"{dt.astimezone().strftime('%Y-%m-%d %H:%M:%S %Z') if dt else run.get('timestamp', '—')} ({age_label(dt)})"))
-            rows.append(("Logged status", str(run.get("status", "—"))))
-            if run.get("error"):
-                rows.append(("Error", str(run.get("error"))))
-        else:
-            rows.append(("Last log", "No log entries yet"))
-
-        if job_key == "research-scraper":
-            if research_file_dt:
-                rows.append(("Research file", f"{RESEARCH_FILE} · updated {age_label(research_file_dt)}"))
-            else:
-                rows.append(("Research file", f"Missing: {RESEARCH_FILE}"))
-
+        if summary.get("last_error"):
+            rows.append(("Error", summary.get("last_error")))
         meta_html = ''.join([f'<div class="k">{k}</div><div>{v}</div>' for k, v in rows])
         cards.append(
             f'''
         <div class="cron-job-card">
             <div class="cron-job-head">
                 <span class="cron-icon">{icon}</span>
-                <span class="cron-name">{meta['name']}</span>
-                <span class="cron-status cron-status-{css}">{label}</span>
+                <span class="cron-name">{summary['name']}</span>
+                <span class="cron-status cron-status-{'ok' if severity == 'ok' else ('running' if severity == 'warning' else 'error')}">{label}</span>
             </div>
             <div class="cron-meta">{meta_html}</div>
         </div>'''

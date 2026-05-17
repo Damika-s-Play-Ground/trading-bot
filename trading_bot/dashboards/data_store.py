@@ -81,6 +81,13 @@ def ensure_schema() -> None:
                 source_file TEXT,
                 payload_json TEXT NOT NULL
             );
+
+            CREATE TABLE IF NOT EXISTS todo_state_overrides (
+                item_key TEXT PRIMARY KEY,
+                status TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                source TEXT DEFAULT 'dashboard'
+            );
             """
         )
 
@@ -399,8 +406,49 @@ def load_research_items(limit: int = 200) -> list[dict[str, Any]]:
     return [dict(row) for row in rows]
 
 
+def load_todo_state_overrides() -> dict[str, dict[str, Any]]:
+    ensure_schema()
+    with _connect() as conn:
+        rows = conn.execute(
+            "SELECT item_key, status, updated_at, source FROM todo_state_overrides"
+        ).fetchall()
+    return {
+        str(row["item_key"]): {
+            "status": row["status"],
+            "updated_at": row["updated_at"],
+            "source": row["source"],
+        }
+        for row in rows
+    }
+
+
+def save_todo_state(item_key: str, status: str, source: str = "dashboard") -> dict[str, Any]:
+    ensure_schema()
+    normalized_status = status if status in {"open", "done", "note"} else "open"
+    updated_at = datetime.now(timezone.utc).isoformat()
+    with _connect() as conn:
+        conn.execute(
+            """
+            INSERT INTO todo_state_overrides (item_key, status, updated_at, source)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT(item_key) DO UPDATE SET
+                status = excluded.status,
+                updated_at = excluded.updated_at,
+                source = excluded.source
+            """,
+            (item_key, normalized_status, updated_at, source),
+        )
+    return {
+        "item_key": item_key,
+        "status": normalized_status,
+        "updated_at": updated_at,
+        "source": source,
+    }
+
+
 def load_todo_items() -> list[dict[str, Any]]:
     ensure_schema()
+    overrides = load_todo_state_overrides()
     with _connect() as conn:
         rows = conn.execute(
             """
@@ -412,10 +460,16 @@ def load_todo_items() -> list[dict[str, Any]]:
     items = []
     for row in rows:
         item = dict(row)
+        item["base_status"] = item.get("status", "open")
         try:
             item["payload"] = json.loads(item.pop("payload_json"))
         except Exception:
             item["payload"] = {}
+        override = overrides.get(str(item.get("item_key")))
+        if override and item["base_status"] != "done":
+            item["status"] = override.get("status", item["status"])
+            item["status_updated_at"] = override.get("updated_at", "")
+            item["status_source"] = override.get("source", "dashboard")
         items.append(item)
     return items
 

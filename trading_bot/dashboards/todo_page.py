@@ -65,7 +65,7 @@ def _build_task_cards(items):
             <article class="todo-card"
                      data-key="{_escape(item.get('item_key', idx))}"
                      data-stage="{idx}"
-                     data-base-status="{_escape(status)}"
+                     data-base-status="{_escape(item.get('base_status', status))}"
                      data-status="{_escape(status)}"
                      data-category="{_escape(category)}"
                      data-search="{_escape((item.get('text', '') + ' ' + category + ' ' + status + ' stage ' + str(idx)).lower())}"
@@ -195,11 +195,46 @@ def build_todo_page() -> None:
         }}
     </style>
     <script>
-    const STORAGE_KEY = 'todo_done_keys_v3';
+    const STORAGE_KEY = 'todo_done_keys_v4';
+    let doneState = [];
     function loadDone() {{
         try {{ return JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]'); }} catch (e) {{ return []; }}
     }}
-    function saveDone(done) {{ localStorage.setItem(STORAGE_KEY, JSON.stringify(done)); }}
+    function saveDone(done) {{
+        doneState = Array.from(new Set(done));
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(doneState));
+    }}
+    async function hydrateDone() {{
+        const local = loadDone();
+        doneState = [...local];
+        if (!window.location.origin.startsWith('http')) {{
+            saveDone(local);
+            return;
+        }}
+        try {{
+            const resp = await fetch('/api/todo-state', {{ cache: 'no-store' }});
+            const payload = await resp.json();
+            const remoteDone = Object.entries(payload?.items || {{}})
+                .filter(([, item]) => item?.status === 'done')
+                .map(([key]) => key);
+            saveDone([...local, ...remoteDone]);
+        }} catch (error) {{
+            console.log('todo state hydrate failed', error);
+            saveDone(local);
+        }}
+    }}
+    async function persistTaskState(key, status) {{
+        if (!window.location.origin.startsWith('http')) return;
+        try {{
+            await fetch('/api/todo-state', {{
+                method: 'POST',
+                headers: {{ 'Content-Type': 'application/json' }},
+                body: JSON.stringify({{ item_key: key, status }}),
+            }});
+        }} catch (error) {{
+            console.log('todo state sync failed', error);
+        }}
+    }}
     function getCards() {{ return Array.from(document.querySelectorAll('.todo-card')); }}
     function setStatusChip(value) {{
         document.querySelectorAll('[data-chip-group="status"] .chip').forEach(ch => ch.classList.toggle('active', ch.dataset.value === value));
@@ -257,7 +292,7 @@ def build_todo_page() -> None:
         const openGrid = document.getElementById('todo-open-grid');
         const doneGrid = document.getElementById('todo-done-grid');
         if (!openGrid || !doneGrid) return;
-        const doneKeys = new Set(loadDone());
+        const doneKeys = new Set(doneState);
         const cards = getCards().sort((a, b) => Number(a.dataset.stage) - Number(b.dataset.stage));
         cards.forEach(card => {{
             const baseStatus = card.dataset.baseStatus;
@@ -269,15 +304,21 @@ def build_todo_page() -> None:
         updateCounters();
         applyFilters();
     }}
-    function toggleTask(card) {{
+    async function toggleTask(card) {{
         if (!card || card.dataset.baseStatus === 'done') return;
-        const done = loadDone();
+        const done = [...doneState];
         const key = card.dataset.key;
         const idx = done.indexOf(key);
-        if (idx >= 0) done.splice(idx, 1);
-        else done.push(key);
+        let status = 'done';
+        if (idx >= 0) {{
+            done.splice(idx, 1);
+            status = 'open';
+        }} else {{
+            done.push(key);
+        }}
         saveDone(done);
         syncCardLocations();
+        await persistTaskState(key, status);
     }}
     function clearFilters() {{
         const search = document.getElementById('todo-search');
@@ -286,7 +327,7 @@ def build_todo_page() -> None:
         setCategoryChip('all');
         applyFilters();
     }}
-    window.addEventListener('DOMContentLoaded', () => {{
+    window.addEventListener('DOMContentLoaded', async () => {{
         document.querySelectorAll('[data-chip-group]').forEach(group => {{
             group.addEventListener('click', (e) => {{
                 const chip = e.target.closest('.chip');
@@ -297,13 +338,14 @@ def build_todo_page() -> None:
             }});
         }});
         document.getElementById('todo-search')?.addEventListener('input', applyFilters);
+        await hydrateDone();
         syncCardLocations();
     }});
     </script>
 </head>
 <body>
     <h1>🗒 Project Roadmap / TODO</h1>
-    <p class="subtitle">A live, filterable roadmap view pulled from the dashboard database. Click any card to move it between the open and done sections.</p>
+    <p class="subtitle">A live, filterable roadmap view pulled from the dashboard database. Click any card to move it between the open and done sections with completion state synced into the dashboard store.</p>
     {nav('todo')}
 
     <div class="hero">
@@ -311,8 +353,8 @@ def build_todo_page() -> None:
             <h2>Clear next steps, not a wall of text</h2>
             <p>
                 This page turns the project summary into a lightweight planning board. It separates completed work,
-                the remaining open path, and live operational notes, then keeps your view state in the browser so it
-                feels like a real dashboard rather than a static checklist.
+                the remaining open path, and live operational notes, then keeps your view state synced to the dashboard store
+                (with browser fallback) so it behaves like a real planning board instead of a static checklist.
             </p>
             <div class="focus-box">
                 <div class="focus-label">Current focus</div>
@@ -338,7 +380,7 @@ def build_todo_page() -> None:
     <div class="progress-wrap">
         <div class="progress-head">
             <strong>Progress</strong>
-            <div class="progress-meta"><span id="progress-text">{done}/{total} complete</span> · updates persist in your browser</div>
+            <div class="progress-meta"><span id="progress-text">{done}/{total} complete</span> · syncs to the dashboard store</div>
         </div>
         <div class="progress-bar"><div class="progress-fill" id="progress-fill"></div></div>
     </div>
