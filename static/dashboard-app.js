@@ -7,7 +7,7 @@ createApp({
       loading: true,
       error: '',
       payload: null,
-      expandedBots: {},
+      activeBotKey: null,
       refreshBusy: false,
       refreshStatus: 'Live polling every 30s',
       allocationHover: null,
@@ -19,6 +19,9 @@ createApp({
   computed: {
     summary() { return this.payload?.summary || {}; },
     bots() { return this.payload?.bots || []; },
+    activeBot() {
+      return this.bots.find(bot => bot.key === this.activeBotKey) || null;
+    },
     recentTrades() { return this.payload?.recent_trades || []; },
     cronJobs() { return this.payload?.cron || []; },
     todoStats() { return this.payload?.todo?.stats || {}; },
@@ -146,12 +149,16 @@ createApp({
       if (Number.isNaN(dt.getTime())) return '—';
       return dt.toLocaleString();
     },
-    toggleBot(key) {
-      const currentlyOpen = !!this.expandedBots[key];
-      this.expandedBots = currentlyOpen ? {} : { [key]: true };
+    openBotModal(key) {
+      this.activeBotKey = key;
+      document.body.style.overflow = 'hidden';
     },
-    isExpanded(key) {
-      return !!this.expandedBots[key];
+    closeBotModal() {
+      this.activeBotKey = null;
+      document.body.style.overflow = '';
+    },
+    onKeydown(event) {
+      if (event.key === 'Escape' && this.activeBotKey) this.closeBotModal();
     },
     donutDash(segment) {
       const circumference = 2 * Math.PI * 56;
@@ -212,9 +219,12 @@ createApp({
     this.restoreCachedPayload();
     this.loadDashboard({ showLoading: !this.payload });
     this.pollHandle = window.setInterval(() => this.loadDashboard({ showLoading: false }), 30000);
+    window.addEventListener('keydown', this.onKeydown);
   },
   beforeUnmount() {
     if (this.pollHandle) window.clearInterval(this.pollHandle);
+    window.removeEventListener('keydown', this.onKeydown);
+    document.body.style.overflow = '';
   },
   template: `
   <div>
@@ -371,11 +381,11 @@ createApp({
         <div class="section-head">
           <div>
             <h2>🤖 Bot cards with drill-downs</h2>
-            <div class="section-note">Cards stay compact by default, show value/share up front, and open without stretching neighboring cards in the same row.</div>
+            <div class="section-note">Cards stay compact by default, show value/share up front, and open richer detail in a focused modal instead of stretching the grid.</div>
           </div>
         </div>
         <div class="bots-grid">
-          <div class="bot-card" v-for="bot in bots" :key="bot.key" :class="{ open: isExpanded(bot.key) }" :style="{ borderLeft: '4px solid ' + bot.color }" @click="toggleBot(bot.key)">
+          <div class="bot-card" v-for="bot in bots" :key="bot.key" :class="{ open: activeBotKey === bot.key }" :style="{ borderLeft: '4px solid ' + bot.color }" @click="openBotModal(bot.key)">
             <div class="bot-top">
               <div class="bot-name-wrap">
                 <div class="bot-icon">{{ bot.icon }}</div>
@@ -422,87 +432,8 @@ createApp({
               </div>
             </div>
             <div class="bot-drilldown-toggle">
-              <span>{{ isExpanded(bot.key) ? 'Hide details' : 'Show details' }}</span>
-              <span class="caret">▾</span>
-            </div>
-
-            <div v-if="isExpanded(bot.key)" class="bot-expand" @click.stop>
-              <div class="expand-grid">
-                <div class="mini-panel">
-                  <div class="mini-title">Deeper bot stats</div>
-                  <div class="metric-grid">
-                    <div class="metric"><div class="k">Return</div><div class="v">{{ bot.total_return_pct == null ? '—' : formatPct(bot.total_return_pct) }}</div></div>
-                    <div class="metric"><div class="k">Expectancy</div><div class="v">{{ bot.expectancy == null ? '—' : bot.expectancy }}</div></div>
-                    <div class="metric"><div class="k">Drawdown</div><div class="v">{{ bot.drawdown_pct == null ? '—' : shortPct(bot.drawdown_pct) }}</div></div>
-                    <div class="metric"><div class="k">Unrealized PnL</div><div class="v" :class="bot.unrealized_pnl >= 0 ? 'green' : 'red'">{{ formatMoney(bot.unrealized_pnl || 0) }}</div></div>
-                    <div class="metric"><div class="k">Realized recent</div><div class="v" :class="bot.realized_pnl_recent >= 0 ? 'green' : 'red'">{{ formatMoney(bot.realized_pnl_recent || 0) }}</div></div>
-                    <div class="metric"><div class="k">Last run</div><div class="v">{{ bot.last_run.time || '—' }}</div></div>
-                  </div>
-                  <div class="todo-strip" v-if="bot.last_run && Object.keys(bot.last_run).length">
-                    <span class="todo-pill" v-if="bot.last_run.fng">F&G {{ bot.last_run.fng }}</span>
-                    <span class="todo-pill" v-if="bot.last_run.buys">Buys {{ bot.last_run.buys }}</span>
-                    <span class="todo-pill" v-if="bot.last_run.sold">Sold {{ bot.last_run.sold }}</span>
-                    <span class="todo-pill" v-if="bot.last_run.signals_found !== undefined">Signals {{ bot.last_run.signals_found }}</span>
-                  </div>
-                </div>
-
-                <div class="mini-panel">
-                  <div class="mini-title">Recent trade reasons</div>
-                  <div class="reason-list" v-if="bot.recent_trade_reasons.length">
-                    <div class="reason-item" v-for="reason in bot.recent_trade_reasons" :key="reason.time + reason.coin + reason.action">
-                      <div class="reason-top">
-                        <strong>{{ reason.coin || '—' }} {{ reason.action }}</strong>
-                        <span class="section-note">{{ relativeTime(reason.time) }}</span>
-                      </div>
-                      <div class="reason-text">{{ reason.reason }}</div>
-                    </div>
-                  </div>
-                  <div v-else class="empty-state">No recent trade reasons yet.</div>
-                </div>
-              </div>
-
-              <div class="expand-grid">
-                <div class="mini-panel">
-                  <div class="mini-title">Coin contribution to total portfolio</div>
-                  <div class="positions-table" v-if="bot.positions.length">
-                    <div class="position-row" v-for="position in bot.positions" :key="position.coin">
-                      <div>
-                        <div class="position-head">
-                          <span class="coin-pill">{{ position.coin }}</span>
-                          <strong :class="positionPnlClass(position.pnl_pct)">{{ formatPct(position.pnl_pct) }}</strong>
-                        </div>
-                        <div class="position-meta">Avg {{ formatMoney(position.avg, 4) }} · Live {{ formatMoney(position.current, 4) }} · Qty {{ Number(position.qty).toFixed(4) }}</div>
-                      </div>
-                      <div class="position-value">
-                        <div>{{ formatMoney(position.value) }}</div>
-                        <div class="position-share">{{ shortPct(contributionForPosition(bot, position), 2) }} of total portfolio</div>
-                      </div>
-                    </div>
-                  </div>
-                  <div v-else class="empty-state">No open positions for this bot.</div>
-                </div>
-
-                <div class="mini-panel">
-                  <div class="mini-title">Signal snapshots</div>
-                  <div class="signal-grid" v-if="bot.signal_snapshots.length">
-                    <div class="signal-item" v-for="signal in bot.signal_snapshots" :key="bot.key + signal.symbol">
-                      <div class="signal-top">
-                        <strong>{{ signal.symbol }}</strong>
-                        <span class="section-note">Live {{ formatMoney(signal.price, signal.price < 1 ? 5 : 2) }}</span>
-                      </div>
-                      <div class="signal-text">RSI, MACD, moving averages, and volume context are shown here to explain what the bot is seeing now.</div>
-                      <div class="signal-metrics">
-                        <span class="pill" :class="indicatorTone(signal.rsi, 'rsi')">RSI {{ Number(signal.rsi).toFixed(1) }}</span>
-                        <span class="pill" :class="indicatorTone(signal.macd_hist, 'macd')">MACD {{ Number(signal.macd_hist).toFixed(4) }}</span>
-                        <span class="pill">MA20 {{ formatMoney(signal.ma20, signal.ma20 < 1 ? 5 : 2) }}</span>
-                        <span class="pill">MA50 {{ formatMoney(signal.ma50, signal.ma50 < 1 ? 5 : 2) }}</span>
-                        <span class="pill" :class="indicatorTone(signal.volume_ratio, 'vol')">Vol {{ Number(signal.volume_ratio).toFixed(2) }}x</span>
-                      </div>
-                    </div>
-                  </div>
-                  <div v-else class="empty-state">Live signal snapshots unavailable for this bot right now.</div>
-                </div>
-              </div>
+              <span>{{ activeBotKey === bot.key ? 'Details open' : 'Open details' }}</span>
+              <span class="caret">↗</span>
             </div>
           </div>
         </div>
@@ -555,6 +486,122 @@ createApp({
                 </div>
               </div>
               <div v-else class="empty-state">Indicator snapshot unavailable for this trade.</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div v-if="activeBot" class="modal-backdrop" @click.self="closeBotModal">
+        <div class="modal-shell" role="dialog" aria-modal="true" :aria-label="activeBot.name + ' details'">
+          <div class="modal-header">
+            <div>
+              <div class="modal-kicker">🤖 Bot drill-down</div>
+              <div class="modal-title-row">
+                <span class="bot-icon">{{ activeBot.icon }}</span>
+                <div>
+                  <div class="modal-title">{{ activeBot.name }}</div>
+                  <div class="section-note">Live allocation, positions, and signal context for this bot only.</div>
+                </div>
+              </div>
+            </div>
+            <button class="modal-close" @click="closeBotModal" aria-label="Close bot details">✕</button>
+          </div>
+
+          <div class="modal-summary-grid">
+            <div class="metric">
+              <div class="k">Portfolio value</div>
+              <div class="v">{{ formatMoney(activeBot.total_value) }}</div>
+            </div>
+            <div class="metric">
+              <div class="k">Portfolio share</div>
+              <div class="v">{{ shortPct(activeBot.portfolio_share, 1) }}</div>
+            </div>
+            <div class="metric">
+              <div class="k">Open positions</div>
+              <div class="v">{{ activeBot.position_count }}</div>
+            </div>
+            <div class="metric">
+              <div class="k">24h activity</div>
+              <div class="v">{{ activeBot.trades_24h }} trades</div>
+            </div>
+          </div>
+
+          <div class="bot-expand modal-expand">
+            <div class="expand-grid modal-grid-top">
+              <div class="mini-panel">
+                <div class="mini-title">Deeper bot stats</div>
+                <div class="metric-grid">
+                  <div class="metric"><div class="k">Return</div><div class="v">{{ activeBot.total_return_pct == null ? '—' : formatPct(activeBot.total_return_pct) }}</div></div>
+                  <div class="metric"><div class="k">Expectancy</div><div class="v">{{ activeBot.expectancy == null ? '—' : activeBot.expectancy }}</div></div>
+                  <div class="metric"><div class="k">Drawdown</div><div class="v">{{ activeBot.drawdown_pct == null ? '—' : shortPct(activeBot.drawdown_pct) }}</div></div>
+                  <div class="metric"><div class="k">Unrealized PnL</div><div class="v" :class="activeBot.unrealized_pnl >= 0 ? 'green' : 'red'">{{ formatMoney(activeBot.unrealized_pnl || 0) }}</div></div>
+                  <div class="metric"><div class="k">Realized recent</div><div class="v" :class="activeBot.realized_pnl_recent >= 0 ? 'green' : 'red'">{{ formatMoney(activeBot.realized_pnl_recent || 0) }}</div></div>
+                  <div class="metric"><div class="k">Last run</div><div class="v">{{ activeBot.last_run.time || '—' }}</div></div>
+                </div>
+                <div class="todo-strip" v-if="activeBot.last_run && Object.keys(activeBot.last_run).length">
+                  <span class="todo-pill" v-if="activeBot.last_run.fng">F&G {{ activeBot.last_run.fng }}</span>
+                  <span class="todo-pill" v-if="activeBot.last_run.buys">Buys {{ activeBot.last_run.buys }}</span>
+                  <span class="todo-pill" v-if="activeBot.last_run.sold">Sold {{ activeBot.last_run.sold }}</span>
+                  <span class="todo-pill" v-if="activeBot.last_run.signals_found !== undefined">Signals {{ activeBot.last_run.signals_found }}</span>
+                </div>
+              </div>
+
+              <div class="mini-panel">
+                <div class="mini-title">Recent trade reasons</div>
+                <div class="reason-list" v-if="activeBot.recent_trade_reasons.length">
+                  <div class="reason-item" v-for="reason in activeBot.recent_trade_reasons" :key="reason.time + reason.coin + reason.action">
+                    <div class="reason-top">
+                      <strong>{{ reason.coin || '—' }} {{ reason.action }}</strong>
+                      <span class="section-note">{{ relativeTime(reason.time) }}</span>
+                    </div>
+                    <div class="reason-text">{{ reason.reason }}</div>
+                  </div>
+                </div>
+                <div v-else class="empty-state">No recent trade reasons yet.</div>
+              </div>
+            </div>
+
+            <div class="expand-grid">
+              <div class="mini-panel">
+                <div class="mini-title">Coin contribution to total portfolio</div>
+                <div class="positions-table" v-if="activeBot.positions.length">
+                  <div class="position-row" v-for="position in activeBot.positions" :key="position.coin">
+                    <div>
+                      <div class="position-head">
+                        <span class="coin-pill">{{ position.coin }}</span>
+                        <strong :class="positionPnlClass(position.pnl_pct)">{{ formatPct(position.pnl_pct) }}</strong>
+                      </div>
+                      <div class="position-meta">Avg {{ formatMoney(position.avg, 4) }} · Live {{ formatMoney(position.current, 4) }} · Qty {{ Number(position.qty).toFixed(4) }}</div>
+                    </div>
+                    <div class="position-value">
+                      <div>{{ formatMoney(position.value) }}</div>
+                      <div class="position-share">{{ shortPct(contributionForPosition(activeBot, position), 2) }} of total portfolio</div>
+                    </div>
+                  </div>
+                </div>
+                <div v-else class="empty-state">No open positions for this bot.</div>
+              </div>
+
+              <div class="mini-panel">
+                <div class="mini-title">Signal snapshots</div>
+                <div class="signal-grid" v-if="activeBot.signal_snapshots.length">
+                  <div class="signal-item" v-for="signal in activeBot.signal_snapshots" :key="activeBot.key + signal.symbol">
+                    <div class="signal-top">
+                      <strong>{{ signal.symbol }}</strong>
+                      <span class="section-note">Live {{ formatMoney(signal.price, signal.price < 1 ? 5 : 2) }}</span>
+                    </div>
+                    <div class="signal-text">RSI, MACD, moving averages, and volume context are shown here to explain what the bot is seeing now.</div>
+                    <div class="signal-metrics">
+                      <span class="pill" :class="indicatorTone(signal.rsi, 'rsi')">RSI {{ Number(signal.rsi).toFixed(1) }}</span>
+                      <span class="pill" :class="indicatorTone(signal.macd_hist, 'macd')">MACD {{ Number(signal.macd_hist).toFixed(4) }}</span>
+                      <span class="pill">MA20 {{ formatMoney(signal.ma20, signal.ma20 < 1 ? 5 : 2) }}</span>
+                      <span class="pill">MA50 {{ formatMoney(signal.ma50, signal.ma50 < 1 ? 5 : 2) }}</span>
+                      <span class="pill" :class="indicatorTone(signal.volume_ratio, 'vol')">Vol {{ Number(signal.volume_ratio).toFixed(2) }}x</span>
+                    </div>
+                  </div>
+                </div>
+                <div v-else class="empty-state">Live signal snapshots unavailable for this bot right now.</div>
+              </div>
             </div>
           </div>
         </div>
