@@ -11,7 +11,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from trading_bot.dashboards.data_store import load_performance_runs, load_todo_items, sync_all, todo_stats
+from trading_bot.dashboards.data_store import load_performance_runs, load_todo_items, sync_all_if_needed, todo_stats
 from trading_bot.dashboards.spot_dashboard import (
     BASE_DIR,
     BOT_FILES,
@@ -31,6 +31,13 @@ from trading_bot.dashboards.spot_dashboard import (
 )
 
 STATIC_DIR = BASE_DIR / "static"
+PAYLOAD_TTL_SECONDS = 20.0
+PRICE_TTL_SECONDS = 15.0
+INDICATOR_TTL_SECONDS = 900.0
+
+_PRICE_CACHE = {"ts": 0.0, "data": {}}
+_INDICATOR_CACHE: dict[str, dict[str, Any]] = {}
+_PAYLOAD_CACHE = {"ts": 0.0, "payload": None}
 
 BOT_SIGNAL_HINTS = {
     "dca": "Mean-reversion setup: oversold RSI, MACD confirmation, Bollinger support, healthy volume.",
@@ -138,7 +145,12 @@ def _fetch_klines(symbol: str, interval: str = "1h", limit: int = 120) -> list[d
 
 
 def _indicator_snapshot(symbol: str, cache: dict[str, Any]) -> dict[str, Any] | None:
+    now = time.time()
     if symbol in cache:
+        return cache[symbol]
+    cached = _INDICATOR_CACHE.get(symbol)
+    if cached and (now - float(cached.get("ts") or 0.0)) < INDICATOR_TTL_SECONDS:
+        cache[symbol] = cached.get("payload")
         return cache[symbol]
     try:
         klines = _fetch_klines(symbol)
@@ -170,9 +182,20 @@ def _indicator_snapshot(symbol: str, cache: dict[str, Any]) -> dict[str, Any] | 
             "macd_bias": "bullish" if histogram >= 0 else "bearish",
         }
     except Exception:
-        snapshot = None
+        snapshot = cached.get("payload") if cached else None
+    _INDICATOR_CACHE[symbol] = {"ts": now, "payload": snapshot}
     cache[symbol] = snapshot
     return snapshot
+
+
+def _cached_prices() -> dict[str, float]:
+    now = time.time()
+    if _PRICE_CACHE.get("data") and (now - float(_PRICE_CACHE.get("ts") or 0.0)) < PRICE_TTL_SECONDS:
+        return dict(_PRICE_CACHE["data"])
+    prices = fetch_prices()
+    _PRICE_CACHE["ts"] = now
+    _PRICE_CACHE["data"] = dict(prices)
+    return prices
 
 
 def _schedule_minutes(schedule: str) -> int:
@@ -289,17 +312,21 @@ def _bot_payload(manager_state: dict[str, Any], prices: dict[str, float], indica
                 "realized_pnl_recent": perf.get("realized_pnl_recent"),
                 "unrealized_pnl": perf.get("unrealized_pnl"),
                 "portfolio_pct": 0.0,
-                "positions": [
-                    {
-                        "coin": row["coin"],
-                        "qty": round(_safe_float(row["qty"]), 6),
-                        "avg": round(_safe_float(row["avg"]), 6),
-                        "current": round(_safe_float(row["current"]), 6),
-                        "value": round(_safe_float(row["qty"]) * _safe_float(row["current"]), 2),
-                        "pnl_pct": round(((_safe_float(row["current"]) - _safe_float(row["avg"])) / _safe_float(row["avg"]) * 100) if _safe_float(row["avg"]) else 0.0, 2),
-                    }
-                    for row in positions
-                ],
+                "positions": sorted(
+                    [
+                        {
+                            "coin": row["coin"],
+                            "qty": round(_safe_float(row["qty"]), 6),
+                            "avg": round(_safe_float(row["avg"]), 6),
+                            "current": round(_safe_float(row["current"]), 6),
+                            "value": round(_safe_float(row["qty"]) * _safe_float(row["current"]), 2),
+                            "pnl_pct": round(((_safe_float(row["current"]) - _safe_float(row["avg"])) / _safe_float(row["avg"]) * 100) if _safe_float(row["avg"]) else 0.0, 2),
+                        }
+                        for row in positions
+                    ],
+                    key=lambda item: _safe_float(item.get("value")),
+                    reverse=True,
+                ),
                 "last_trade": {
                     "time": last_trade.get("time", ""),
                     "action": last_trade.get("action", ""),
@@ -384,9 +411,13 @@ def _chart_payload(cards: list[dict[str, Any]], performance_runs: list[dict[str,
 
 
 def dashboard_payload() -> dict[str, Any]:
-    sync_all()
+    now = time.time()
+    cached_payload = _PAYLOAD_CACHE.get("payload")
+    if cached_payload is not None and (now - float(_PAYLOAD_CACHE.get("ts") or 0.0)) < PAYLOAD_TTL_SECONDS:
+        return cached_payload
+    sync_all_if_needed(min_interval=5.0)
     manager_state = load_json(MANAGER_FILE, {})
-    prices = fetch_prices()
+    prices = _cached_prices()
     indicator_cache: dict[str, Any] = {}
     cards = _bot_payload(manager_state, prices, indicator_cache)
     performance_runs = load_performance_runs(80)
@@ -396,7 +427,7 @@ def dashboard_payload() -> dict[str, Any]:
     todo_items = load_todo_items()
     todo_summary = todo_stats(todo_items)
     latest_run = performance_runs[-1] if performance_runs else {}
-    return {
+    payload = {
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "regime": manager_state.get("regime", "sideways"),
         "regime_label": REGIME_ICONS.get(manager_state.get("regime", "sideways"), "➡️ SIDEWAYS"),
@@ -434,6 +465,9 @@ def dashboard_payload() -> dict[str, Any]:
             ],
         },
     }
+    _PAYLOAD_CACHE["ts"] = now
+    _PAYLOAD_CACHE["payload"] = payload
+    return payload
 
 
 def build_dashboard_shell() -> None:

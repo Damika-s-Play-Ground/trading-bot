@@ -111,12 +111,12 @@ def age_label(dt):
 
 def nav(active):
     items = [
-        ("dashboard.html", "📊 Spot", active == "spot"),
-        ("futures.html", "🔵 Futures", active == "futures"),
-        ("research.html", "🔬 Research", active == "research"),
-        ("todo.html", "🗒 Todo", active == "todo"),
-        ("cron.html", "⏱ Cron", active == "cron"),
-        ("glossary.html", "📖 Glossary", active == "glossary"),
+        ("/dashboard", "📊 Spot", active == "spot"),
+        ("/futures", "🔵 Futures", active == "futures"),
+        ("/research", "🔬 Research", active == "research"),
+        ("/todo", "🗒 Todo", active == "todo"),
+        ("/cron", "⏱ Cron", active == "cron"),
+        ("/glossary", "📖 Glossary", active == "glossary"),
     ]
     html = ['<div class="nav">']
     for href, label, is_active in items:

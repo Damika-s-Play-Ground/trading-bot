@@ -1,4 +1,5 @@
 const { createApp } = Vue;
+const DASHBOARD_CACHE_KEY = 'dashboard_payload_v2';
 
 createApp({
   data() {
@@ -73,16 +74,26 @@ createApp({
     },
   },
   methods: {
-    async loadDashboard() {
-      this.loading = true;
+    restoreCachedPayload() {
+      try {
+        const cached = JSON.parse(window.localStorage.getItem(DASHBOARD_CACHE_KEY) || 'null');
+        if (!cached || !cached.payload) return false;
+        this.payload = cached.payload;
+        this.loading = false;
+        return true;
+      } catch (error) {
+        return false;
+      }
+    },
+    async loadDashboard(options = {}) {
+      const showLoading = options.showLoading ?? !this.payload;
+      if (showLoading) this.loading = true;
       this.error = '';
       try {
         const response = await fetch('/api/dashboard-data', { cache: 'no-store' });
         if (!response.ok) throw new Error(`dashboard data request failed (${response.status})`);
         this.payload = await response.json();
-        if (!Object.keys(this.expandedBots).length && this.bots[0]) {
-          this.expandedBots[this.bots[0].key] = true;
-        }
+        window.localStorage.setItem(DASHBOARD_CACHE_KEY, JSON.stringify({ ts: Date.now(), payload: this.payload }));
       } catch (error) {
         console.error(error);
         this.error = error.message || 'Failed to load dashboard data';
@@ -136,7 +147,8 @@ createApp({
       return dt.toLocaleString();
     },
     toggleBot(key) {
-      this.expandedBots[key] = !this.expandedBots[key];
+      const currentlyOpen = !!this.expandedBots[key];
+      this.expandedBots = currentlyOpen ? {} : { [key]: true };
     },
     isExpanded(key) {
       return !!this.expandedBots[key];
@@ -197,8 +209,9 @@ createApp({
     },
   },
   mounted() {
-    this.loadDashboard();
-    this.pollHandle = window.setInterval(() => this.loadDashboard(), 30000);
+    this.restoreCachedPayload();
+    this.loadDashboard({ showLoading: !this.payload });
+    this.pollHandle = window.setInterval(() => this.loadDashboard({ showLoading: false }), 30000);
   },
   beforeUnmount() {
     if (this.pollHandle) window.clearInterval(this.pollHandle);
@@ -217,12 +230,12 @@ createApp({
     </div>
 
     <div class="nav">
-      <a class="active" href="/dashboard.html">📊 Spot</a>
-      <a href="/futures.html">🔵 Futures</a>
-      <a href="/research.html">🔬 Research</a>
-      <a href="/todo.html">🗒 Todo</a>
-      <a href="/cron.html">⏱ Cron</a>
-      <a href="/glossary.html">📖 Glossary</a>
+      <a class="active" href="/dashboard">📊 Spot</a>
+      <a href="/futures">🔵 Futures</a>
+      <a href="/research">🔬 Research</a>
+      <a href="/todo">🗒 Todo</a>
+      <a href="/cron">⏱ Cron</a>
+      <a href="/glossary">📖 Glossary</a>
     </div>
 
     <div v-if="loading" class="section-card">Loading dashboard…</div>
@@ -358,7 +371,7 @@ createApp({
         <div class="section-head">
           <div>
             <h2>🤖 Bot cards with drill-downs</h2>
-            <div class="section-note">Each card now shows its portfolio share up front, and expands into deeper stats, live signal snapshots, and recent trade reasons.</div>
+            <div class="section-note">Cards stay compact by default, show value/share up front, and only open one drill-down at a time for faster scanning.</div>
           </div>
         </div>
         <div class="bots-grid">
@@ -380,7 +393,7 @@ createApp({
               <div class="bot-stat">
                 <div class="k">Value</div>
                 <div class="v">{{ formatMoney(bot.value) }}</div>
-                <div class="s">Contributes {{ shortPct(bot.portfolio_pct) }}</div>
+                <div class="s">{{ formatMoney(bot.value) }} · {{ shortPct(bot.portfolio_pct) }} of portfolio</div>
               </div>
               <div class="bot-stat">
                 <div class="k">Cash</div>
@@ -405,7 +418,7 @@ createApp({
               <div class="bot-stat">
                 <div class="k">Last trade</div>
                 <div class="v">{{ bot.last_trade.coin || '—' }} {{ bot.last_trade.action || '' }}</div>
-                <div class="s">{{ relativeTime(bot.last_trade.time) }}</div>
+                <div class="s">{{ relativeTime(bot.last_trade.time) }} · tap for drill-down</div>
               </div>
             </div>
 
@@ -495,7 +508,7 @@ createApp({
         <div class="section-head">
           <div>
             <h2>🔄 Recent trades</h2>
-            <div class="section-note">Responsive cards now include the raw reason text plus richer RSI / MACD / MA / volume snapshots when available.</div>
+            <div class="section-note">Reloads paint from cached data first, then refresh in place with the latest reason and indicator context.</div>
           </div>
         </div>
         <div class="trade-grid">

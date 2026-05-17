@@ -22,6 +22,14 @@ PAGES = {
     "todo.html",
     "glossary.html",
 }
+ROUTE_MAP = {
+    "dashboard": "dashboard.html",
+    "futures": "futures.html",
+    "research": "research.html",
+    "todo": "todo.html",
+    "cron": "cron.html",
+    "glossary": "glossary.html",
+}
 BUILD_SCRIPTS = [
     "dashboard.py",
     "futures_dashboard.py",
@@ -102,7 +110,7 @@ def _is_local_request() -> bool:
 
 @app.get("/")
 def home():
-    return redirect("/dashboard.html")
+    return redirect("/dashboard")
 
 
 @app.get("/healthz")
@@ -155,11 +163,22 @@ def serve_static(filename: str):
     return send_from_directory(STATIC_DIR, filename)
 
 
+@app.get("/<page_name>")
+def serve_clean_page(page_name: str):
+    if page_name in ROUTE_MAP:
+        return send_from_directory(REPO_ROOT, ROUTE_MAP[page_name])
+    if page_name in PAGES:
+        clean = page_name[:-5] if page_name.endswith('.html') else 'dashboard'
+        return redirect(f"/{clean}")
+    return redirect("/dashboard")
+
+
 @app.get("/<path:page>")
 def serve_page(page: str):
-    if page not in PAGES:
-        return redirect("/dashboard.html")
-    return send_from_directory(REPO_ROOT, page)
+    if page in PAGES:
+        clean = page[:-5] if page.endswith('.html') else 'dashboard'
+        return redirect(f"/{clean}")
+    return redirect("/dashboard")
 
 
 if __name__ == "__main__":

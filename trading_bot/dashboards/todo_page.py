@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from trading_bot.dashboards.data_store import load_todo_items, sync_all, todo_stats
+from trading_bot.dashboards.data_store import load_todo_items, sync_all_if_needed, todo_stats
 from trading_bot.dashboards.shared_ui import build_bar_chart, build_donut_chart
 from trading_bot.dashboards.spot_dashboard import build_shared_style, nav
 
@@ -91,7 +91,7 @@ def _build_task_cards(items):
 
 
 def build_todo_page() -> None:
-    sync_all()
+    sync_all_if_needed(min_interval=5.0)
     items = load_todo_items()
     stats = todo_stats(items)
     done = stats["done"]
@@ -127,6 +127,8 @@ def build_todo_page() -> None:
     <title>Project Roadmap / TODO</title>
     <style>
         {build_shared_style('#22c55e')}
+        body {{ padding:0; }}
+        .page-shell {{ max-width:1540px; margin:0 auto; padding:24px; }}
         .hero {{
             display:grid; grid-template-columns:1.6fr 1fr; gap:16px; margin-bottom:18px;
         }}
@@ -187,7 +189,7 @@ def build_todo_page() -> None:
             .chart-grid {{ grid-template-columns:1fr; }}
         }}
         @media (max-width: 640px) {{
-            body {{ padding:16px; }}
+            .page-shell {{ padding:16px; }}
             .nav a {{ width:calc(50% - 4px); text-align:center; }}
             .search-input {{ width:100%; }}
             .todo-grid {{ grid-template-columns:1fr; }}
@@ -266,6 +268,7 @@ def build_todo_page() -> None:
         set('stat-done', done);
         set('stat-open', open);
         set('stat-notes', notes);
+        set('note-count', notes);
         set('open-count', open);
         set('done-count', done);
         set('progress-text', `${{done}}/${{total}} complete`);
@@ -291,15 +294,19 @@ def build_todo_page() -> None:
     function syncCardLocations() {{
         const openGrid = document.getElementById('todo-open-grid');
         const doneGrid = document.getElementById('todo-done-grid');
-        if (!openGrid || !doneGrid) return;
+        const noteGrid = document.getElementById('todo-note-grid');
+        if (!openGrid || !doneGrid || !noteGrid) return;
         const doneKeys = new Set(doneState);
         const cards = getCards().sort((a, b) => Number(a.dataset.stage) - Number(b.dataset.stage));
         cards.forEach(card => {{
             const baseStatus = card.dataset.baseStatus;
             const isDone = baseStatus === 'done' || doneKeys.has(card.dataset.key);
-            card.dataset.currentStatus = isDone ? 'done' : baseStatus;
+            const resolvedStatus = isDone ? 'done' : baseStatus;
+            card.dataset.currentStatus = resolvedStatus;
             card.classList.toggle('done', isDone);
-            (isDone ? doneGrid : openGrid).appendChild(card);
+            if (resolvedStatus === 'note') noteGrid.appendChild(card);
+            else if (resolvedStatus === 'done') doneGrid.prepend(card);
+            else openGrid.appendChild(card);
         }});
         updateCounters();
         applyFilters();
@@ -344,6 +351,7 @@ def build_todo_page() -> None:
     </script>
 </head>
 <body>
+    <div class="page-shell">
     <h1>🗒 Project Roadmap / TODO</h1>
     <p class="subtitle">A live, filterable roadmap view pulled from the dashboard database. Click any card to move it between the open and done sections with completion state synced into the dashboard store.</p>
     {nav('todo')}
@@ -440,6 +448,14 @@ def build_todo_page() -> None:
 
         <div class="todo-section">
             <div class="todo-section-header">
+                <strong>Operational notes</strong>
+                <span class="mini-note"><span id="note-count">{notes}</span> reminders</span>
+            </div>
+            <div class="todo-grid" id="todo-note-grid"></div>
+        </div>
+
+        <div class="todo-section">
+            <div class="todo-section-header">
                 <strong>Completed work</strong>
                 <span class="mini-note"><span id="done-count">{done}</span> finished items</span>
             </div>
@@ -450,6 +466,7 @@ def build_todo_page() -> None:
     <p class="footer-note" style="color:#64748b;font-size:12px;margin-top:10px;">
         Source: {REPO_ROOT / 'data' / 'dashboard.sqlite'} · refreshed from the repo summary and live dashboard outputs.
     </p>
+    </div>
 </body>
 </html>"""
     OUTPUT.write_text(html)

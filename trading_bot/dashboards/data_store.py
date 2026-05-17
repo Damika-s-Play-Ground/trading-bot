@@ -22,6 +22,20 @@ RESEARCH_FILE = Path.home() / "Documents" / "ai-crypto-research.md"
 PERFORMANCE_FILE = REPO_ROOT / "performance_journal.json"
 CRON_FILE = REPO_ROOT / "logs" / "cron.json"
 
+_SYNC_CACHE = {
+    "stamp": None,
+    "result": None,
+    "checked_at": 0.0,
+}
+
+
+def _file_signature(path: Path) -> tuple[float, int]:
+    try:
+        stat = path.stat()
+        return stat.st_mtime, stat.st_size
+    except FileNotFoundError:
+        return 0.0, 0
+
 
 def _connect() -> sqlite3.Connection:
     DATA_DIR.mkdir(parents=True, exist_ok=True)
@@ -368,6 +382,27 @@ def sync_all() -> dict[str, int]:
         "research_items": sync_research_entries(),
         "todo_items": sync_todo_items(),
     }
+
+
+def sync_all_if_needed(force: bool = False, min_interval: float = 5.0) -> dict[str, int]:
+    ensure_schema()
+    now = datetime.now(timezone.utc).timestamp()
+    stamp = (
+        _file_signature(PERFORMANCE_FILE),
+        _file_signature(CRON_FILE),
+        _file_signature(RESEARCH_FILE),
+        _file_signature(SUMMARY_FILE),
+    )
+    cached_stamp = _SYNC_CACHE.get("stamp")
+    cached_result = _SYNC_CACHE.get("result")
+    checked_at = float(_SYNC_CACHE.get("checked_at") or 0.0)
+    if not force and cached_stamp == stamp and cached_result is not None and (now - checked_at) < max(min_interval, 0.0):
+        return dict(cached_result)
+    result = sync_all() if force or cached_stamp != stamp or cached_result is None else dict(cached_result)
+    _SYNC_CACHE["stamp"] = stamp
+    _SYNC_CACHE["result"] = dict(result)
+    _SYNC_CACHE["checked_at"] = now
+    return dict(result)
 
 
 def load_performance_runs(limit: int = 60) -> list[dict[str, Any]]:

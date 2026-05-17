@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from trading_bot.dashboards.data_store import load_research_items, sync_all
+from trading_bot.dashboards.data_store import load_research_items, sync_all_if_needed
 from trading_bot.dashboards.shared_ui import build_bar_chart, build_donut_chart
 from trading_bot.dashboards.spot_dashboard import build_shared_style, nav
 
@@ -57,7 +57,7 @@ def _render_item(item: dict, idx: int) -> str:
             <span class="done-mark">✓</span>
         </div>
         <h3 class="research-title">{_escape(item.get('title', 'Untitled'))}</h3>
-        <div class="research-grid">
+        <div class="research-detail-grid">
             <div><span class="detail-label">Strategy</span><span>{_escape(item.get('strategy', '—'))}</span></div>
             <div><span class="detail-label">Results</span><span style="color:{sentiment_color};font-weight:700">{_escape(results)}</span></div>
             <div><span class="detail-label">Tools</span><span>{_escape(item.get('tools', '—'))}</span></div>
@@ -72,7 +72,7 @@ def _render_item(item: dict, idx: int) -> str:
 
 
 def build_research_page() -> None:
-    sync_all()
+    sync_all_if_needed(min_interval=5.0)
     items = load_research_items()
     total = len(items)
     platform_counts: dict[str, int] = {}
@@ -119,6 +119,8 @@ def build_research_page() -> None:
     <title>AI Crypto Research</title>
     <style>
         {build_shared_style('#3b82f6')}
+        body {{ padding:0; }}
+        .page-shell {{ max-width:1540px; margin:0 auto; padding:24px; }}
         .hero {{
             display:grid; grid-template-columns:1.2fr 1fr; gap:16px; margin-bottom:18px;
         }}
@@ -147,7 +149,7 @@ def build_research_page() -> None:
         .section-title {{ display:flex; justify-content:space-between; gap:12px; align-items:center; margin:18px 0 12px; }}
         .section-title h2 {{ font-size:16px; }}
         .section-title .count {{ color:#94a3b8; font-size:12px; }}
-        .research-grid {{ display:grid; grid-template-columns:repeat(auto-fit,minmax(330px,1fr)); gap:14px; }}
+        .research-card-grid {{ display:grid; grid-template-columns:repeat(auto-fit,minmax(330px,1fr)); gap:14px; }}
         .research-card {{ background:#0f172a; border:1px solid #334155; border-radius:16px; padding:15px 16px; cursor:pointer; transition:transform .15s ease, border-color .15s ease, background .15s ease; }}
         .research-card:hover {{ transform:translateY(-1px); border-color:#475569; background:#101b31; }}
         .research-card.done {{ opacity:.72; }}
@@ -160,7 +162,7 @@ def build_research_page() -> None:
         .done-mark {{ color:#22c55e; font-size:18px; opacity:.25; }}
         .research-card.done .done-mark {{ opacity:1; }}
         .research-title {{ font-size:15px; line-height:1.45; margin-bottom:10px; }}
-        .research-grid {{ display:grid; grid-template-columns:1fr 1fr; gap:10px 16px; }}
+        .research-detail-grid {{ display:grid; grid-template-columns:1fr 1fr; gap:10px 16px; min-width:0; }}
         .takeaway {{ grid-column:1/-1; }}
         .detail-label {{ color:#64748b; display:block; font-size:10px; text-transform:uppercase; letter-spacing:.5px; margin-bottom:2px; }}
         .research-footer {{ display:flex; justify-content:space-between; align-items:center; gap:10px; margin-top:12px; flex-wrap:wrap; }}
@@ -171,10 +173,10 @@ def build_research_page() -> None:
         @media (max-width: 900px) {{
             .hero {{ grid-template-columns:1fr; }}
             .chart-grid {{ grid-template-columns:1fr; }}
-            .research-grid {{ grid-template-columns:1fr; }}
+            .research-card-grid, .research-detail-grid {{ grid-template-columns:1fr; }}
         }}
         @media (max-width: 640px) {{
-            body {{ padding:16px; }}
+            .page-shell {{ padding:16px; }}
             .nav a {{ width:calc(50% - 4px); text-align:center; }}
             .search-input {{ width:100%; }}
         }}
@@ -279,6 +281,7 @@ def build_research_page() -> None:
     </script>
 </head>
 <body>
+    <div class="page-shell">
     <h1>🔬 AI Crypto Research</h1>
     <p class="subtitle">Interactive research vault — filter by platform, search by topic, and mark items as evaluated.</p>
     {nav('research')}
@@ -349,17 +352,18 @@ def build_research_page() -> None:
     <div class="research-layout">
         <div>
             <div class="section-title"><h2>📋 To Evaluate</h2><span class="count">review queue</span></div>
-            <div class="research-grid" id="to-evaluate"><div class="empty-state" id="open-empty" style="display:none;">No open items match the current filter.</div>{cards_html}</div>
+            <div class="research-card-grid" id="to-evaluate"><div class="empty-state" id="open-empty" style="display:none;">No open items match the current filter.</div>{cards_html}</div>
         </div>
         <div>
             <div class="section-title"><h2>✅ Evaluated</h2><span class="count">click again to move back</span></div>
-            <div class="research-grid" id="evaluated-container"><div class="empty-state" id="evaluated-empty">No evaluated items yet.</div></div>
+            <div class="research-card-grid" id="evaluated-container"><div class="empty-state" id="evaluated-empty">No evaluated items yet.</div></div>
         </div>
     </div>
 
     <p class="footer-note" style="color:#64748b;font-size:12px;margin-top:12px;">
         Source: {REPO_ROOT / 'data' / 'dashboard.sqlite'} · research feed regenerated from {Path.home() / 'Documents' / 'ai-crypto-research.md'}.
     </p>
+    </div>
 </body>
 </html>"""
 

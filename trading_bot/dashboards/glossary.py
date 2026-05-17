@@ -1137,12 +1137,12 @@ html = f"""<!DOCTYPE html>
     <p class="subtitle">Technical terms explained with examples, diagrams, and real bot references</p>
     
     <div class="nav">
-        <a href="dashboard.html">📊 Spot</a>
-        <a href="futures.html">🔵 Futures</a>
-        <a href="research.html">🔬 Research</a>
-        <a href="todo.html">🗒 Todo</a>
-        <a href="cron.html">⏱ Cron</a>
-        <a href="glossary.html" class="active">📖 Glossary</a>
+        <a href="/dashboard">📊 Spot</a>
+        <a href="/futures">🔵 Futures</a>
+        <a href="/research">🔬 Research</a>
+        <a href="/todo">🗒 Todo</a>
+        <a href="/cron">⏱ Cron</a>
+        <a href="/glossary" class="active">📖 Glossary</a>
     </div>
     
     <div class="glossary-stats">
