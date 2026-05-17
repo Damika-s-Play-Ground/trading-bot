@@ -1008,6 +1008,7 @@ html = f"""<!DOCTYPE html>
         <a href="dashboard.html">📊 Spot</a>
         <a href="futures.html">🔵 Futures</a>
         <a href="research.html">🔬 Research</a>
+        <a href="todo.html">🗒 Todo</a>
         <a href="cron.html">⏱ Cron</a>
         <a href="glossary.html" class="active">📖 Glossary</a>
     </div>

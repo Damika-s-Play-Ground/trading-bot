@@ -1,0 +1,519 @@
+    High-level summary
+    
+    You are no longer in the “research only” stage.
+    The project has already moved well into implementation and operations.
+    
+    What’s done:
+    - Phase A: strategy/risk research — mostly done
+    - Phase B: setup/architecture — done
+    - Phase C: first implementation pass — largely done
+    - Operations/automation/documentation — done at a practical MVP level
+    
+    What’s still missing:
+    - the “research-grade” optimization layer is not fully wired into live decision-making yet
+    - the “unified candidate scorer” is still not implemented in the live manager
+    - paper-trading system is solid, but not yet the final production/live-trading architecture
+    
+    Current live status
+    
+    Active cron jobs
+    1) Binance Trading Bot - Paper Trade Run
+    - Job ID: 60d9a438c1ec
+    - Schedule: every 30m
+    - Mode: script-only
+    - Last status: ok
+    - Last run: 2026-05-17 15:45:33 +0530
+    - Next run: 2026-05-17 16:45:54 +0530
+    
+    2) AI Crypto Trading Research - Social Scraper
+    - Job ID: 05738e66e59b
+    - Schedule: every 5m
+    - Mode: script-only
+    - Last status: ok
+    - Last run: 2026-05-17 16:15:56 +0530
+    - Next run: 2026-05-17 16:20:56 +0530
+    
+    Cron health from repo logs
+    - trading-bot latest logged run: ok
+    - research scraper latest logged runs: repeatedly ok
+    - there was one recent transient trading-bot dashboard failure:
+      - 2026-05-17 15:45 local: dashboards errored once
+      - by 16:15 local the trading-bot run was back to ok
+    
+    So operationally: the system is running and self-updating right now.
+    
+    What the original staged plan was
+    
+    Phase A — Strategy and risk foundation
+    Goal:
+    - validate what style of bot to build
+    - define indicators, entries/exits, risk limits, and sizing rules
+    
+    Research decisions already made:
+    - Hybrid architecture was chosen:
+      - Freqtrade for research/backtesting/hyperopt
+      - custom Python for live execution
+    - Reason:
+      - custom execution is safer for your Binance Earn context
+    - Risk concepts identified:
+      - drawdown breakers
+      - stress breakers
+      - Kelly-inspired sizing ideas
+      - multi-metric evaluation instead of raw PnL only
+    
+    Status:
+    - Conceptually done
+    - Partially translated into code
+    
+    Phase B — Technical setup and architecture
+    Goal:
+    - make the system runnable, organized, and automatable
+    
+    Status:
+    - Done
+    
+    Phase C — Implementation
+    Goal:
+    - turn the research into an actual bot system with manager, strategies, dashboards, and automation
+    
+    Status:
+    - Mostly done for paper trading
+    - Not yet complete for “intelligent strategy selection / optimization loop”
+    
+    What has been achieved so far
+    
+    1) The bot is now a real multi-bot paper-trading system
+    Achieved:
+    - central manager controls a unified paper portfolio
+    - five spot bots run under manager orchestration
+    - separate futures paper bot exists
+    - dashboards regenerate automatically
+    
+    Repo docs confirm:
+    - 5 spot bots under a central adaptive manager
+    - 1 futures paper bot
+    - dashboards for spot, futures, research, glossary, and cron health
+    
+    2) Adaptive manager exists and already includes real portfolio controls
+    This is the biggest implementation achievement.
+    
+    In trading_bot/core/manager.py, the manager already includes:
+    - one unified $1,200 target paper portfolio
+    - regime-aware allocation
+    - per-bot performance journaling
+    - allocation drift reporting
+    - auto-throttling
+    - portfolio circuit breakers
+    - rebalancing logic
+    
+    Specific controls now present:
+    - MAX_SINGLE_COIN_EXPOSURE_PCT = 22.0
+    - MAX_PORTFOLIO_DRAWDOWN_PCT = 15.0
+    - MAX_STRESS_LOSS_PCT = 12.0
+    - BOT_DRIFT_THROTTLE_PCT = 15.0
+    - REBALANCE_MIN_TRANSFER_USDT = 5.0
+    - REBALANCE_MIN_USDT_BUFFER = 10.0
+    
+    That means the earlier risk research has already been partially operationalized.
+    
+    3) Regime-based allocation is implemented
+    Manager has regime templates for:
+    - bull
+    - bear
+    - sideways
+    - volatile
+    
+    That’s important because the system is no longer just “run the same bot every time.”
+    It already shifts allocation logic depending on market conditions.
+    
+    That is a major step beyond a basic toy bot.
+    
+    4) Capital pressure / active rebalancing has been added
+    This was one of the more meaningful architecture upgrades.
+    
+    Already implemented:
+    - bot-to-bot cash movement logic
+    - drift detection
+    - reallocation between strategies
+    - overweight throttling
+    
+    This directly addresses the earlier question:
+    “How do we move capital between bots intelligently?”
+    
+    So this part is achieved.
+    
+    5) Multi-strategy package organization is done without breaking automation
+    The repo was reorganized into a professional package structure:
+    
+    - trading_bot/core/
+    - trading_bot/bots/
+    - trading_bot/dashboards/
+    - trading_bot/analysis/
+    - docs/
+    
+    And compatibility was preserved with root-level wrappers like:
+    - manager.py
+    - bot.py
+    - bot_grid.py
+    - bot_momentum.py
+    - bot_futures.py
+    - dashboard.py
+    - etc.
+    
+    That means:
+    - existing cron scripts continue to work
+    - codebase is now much easier to maintain
+    - future refactors are safer
+    
+    6) Documentation exists now
+    Achieved:
+    - README.md
+    - docs/codebase.md
+    
+    These document:
+    - runtime flow
+    - directory structure
+    - stable entrypoints
+    - root state files
+    - scheduling model
+    
+    This is done.
+    
+    7) Version control is set up and clean
+    Achieved:
+    - git initialized
+    - remote origin connected
+    - first commit pushed
+    - secrets and runtime state excluded
+    
+    Current git state:
+    - latest visible commit: f9fc39d
+    - message: chore: organize codebase and add docs
+    
+    This is done.
+    
+    8) Automation is stable and running locally through Hermes cron
+    Achieved:
+    - trading bot every 30 minutes
+    - research scraper every 5 minutes
+    - local delivery mode
+    - logs written to repo
+    - cron dashboard data source in logs/cron.json
+    
+    This is done and operational.
+    
+    9) Research ingestion is no longer blocked by the earlier failing agent workflow
+    Achieved:
+    - research scraping was replaced with a deterministic script
+    - it writes into:
+      /Users/damikaanupama/Documents/ai-crypto-research.md
+    - cron logs show repeated successful updates
+    
+    This means the research loop is alive again.
+    
+    10) Analysis tooling exists, but is still partly offline / separate
+    In trading_bot/analysis/optimizer.py, there is already:
+    - a Sharpe-like metric
+    - a composite score
+    - ranking of parameter combinations
+    - saved optimizer output
+    
+    The current optimizer score is:
+    - 50% total PnL weight
+    - 30% win rate weight
+    - Sharpe bonus
+    
+    So there is already the beginning of a scoring system.
+    
+    Important caveat:
+    This exists in analysis tooling, not yet as the manager’s live unified candidate scorer.
+    
+    What is not fully achieved yet
+    
+    1) Unified Candidate Scorer is not yet implemented in live execution
+    This is still the clearest “next major build.”
+    
+    You already have:
+    - regime-aware allocations
+    - per-bot metrics
+    - composite scoring in optimizer research
+    
+    But you do not yet have:
+    - a single live scorer that ranks candidate trades/signals across bots
+    - manager-level trade selection based on a unified score
+    - a research-informed “best signal wins budget” mechanism
+    
+    Right now the architecture is:
+    - multiple bots run
+    - manager allocates/throttles/rebalances
+    
+    Not yet:
+    - manager centrally scores every possible trade candidate and chooses the best opportunities globally
+    
+    So this remains unfinished.
+    
+    2) Freqtrade research integration is not wired into the repo workflow
+    The earlier plan chose:
+    - Freqtrade for backtests/hyperopt
+    - custom Python for live execution
+    
+    Current repo search shows no active Freqtrade integration in this codebase.
+    So the architecture decision exists, but the Freqtrade leg is still mostly conceptual / external.
+    
+    That means:
+    - backtesting exists in custom scripts
+    - optimization exists in custom scripts
+    - but the formal “Freqtrade as research engine” pipeline is not yet implemented here
+    
+    3) No bounded-autonomy progression yet
+    Earlier research surfaced ideas like:
+    - DRAFT
+    - SHADOW
+    - PAPER
+    - LIVE
+    
+    Current state:
+    - you are solidly in PAPER mode
+    
+    Not yet implemented:
+    - shadow/live promotion pipeline
+    - deployment gates for promotion
+    - explicit production readiness checklist inside the bot system
+    
+    4) Multi-agent consensus from research is not implemented
+    Research found patterns like:
+    - analyst agent
+    - whale agent
+    - risk agent
+    - unanimous approval before execution
+    
+    Current bot does not appear to implement:
+    - multi-agent consensus
+    - research peer-review gate
+    - signal voting architecture
+    
+    This is still future work if you want the bot to become more “AI-native.”
+    
+    5) External alerting / remote ops are not in final form
+    Current cron delivery is local.
+    WhatsApp delivery was intentionally disabled earlier to preserve stability.
+    
+    So:
+    - core system is stable
+    - notification layer is not yet the final desired setup
+    
+    6) Data/state layout is still pragmatic, not final
+    Root-level JSON files are still intentionally preserved for compatibility:
+    - paper_*.json
+    - manager_state.json
+    - manager_portfolio.json
+    - performance_journal.json
+    - market_data.json
+    
+    This is the right short-term choice, but long-term it should likely move into:
+    - state/
+    - data/
+    - outputs/
+    
+    with compatibility wrappers if needed.
+    
+    Best interpretation of progress vs the original plan
+    
+    If I map the original plan into practical delivery:
+    
+    Phase A — Research and system design
+    Status: 90% done
+    
+    Done:
+    - strategy research
+    - risk research
+    - architecture selection
+    - monitoring direction
+    - social/web research loop
+    
+    Not fully done:
+    - converting every research insight into a measurable implementation spec
+    
+    Phase B — Setup and architecture
+    Status: 100% done
+    
+    Done:
+    - package structure
+    - repo hygiene
+    - git setup
+    - cron automation
+    - wrapper compatibility
+    - documentation
+    - stable local execution
+    
+    Phase C — Working implementation
+    Status: 75% done
+    
+    Done:
+    - central manager
+    - five spot bots
+    - futures bot
+    - dashboards
+    - logging
+    - rebalancing
+    - circuit breakers
+    - performance journaling
+    - operational automation
+    
+    Not done:
+    - unified candidate scorer
+    - walk-forward style manager decisions
+    - research-to-live parameter pipeline
+    - stronger validation loop before strategy changes
+    
+    Phase D — Production intelligence / promotion
+    Status: 25% done
+    
+    Done:
+    - recurring research feed
+    - optimization foundation
+    - logs + dashboards
+    
+    Not done:
+    - full research exploitation loop
+    - model-driven or consensus-driven signal gating
+    - VPS production deployment
+    - live Binance execution layer with Earn-awareness
+    - external notifications hardened
+    
+    Recommended next steps, in priority order
+    
+    1) Build the Unified Candidate Scorer
+    This should be the next major milestone.
+    
+    Why first:
+    - it is the biggest missing piece between “multi-bot system” and “smart portfolio brain”
+    - it directly uses the research you already gathered
+    - it improves capital allocation quality without needing live money yet
+    
+    What it should do:
+    - collect candidate trades from all spot bots
+    - score each candidate on a common scale
+    - include:
+      - expected upside
+      - stop distance / risk
+      - regime fit
+      - recent bot performance
+      - coin exposure concentration
+      - market stress conditions
+      - liquidity / volume filters
+    - let manager decide:
+      - approve / reject / downsize / prioritize
+    
+    Target outcome:
+    - manager becomes selector, not just allocator
+    
+    2) Connect analysis results to live config decisions
+    You already have optimizer logic offline.
+    Next step:
+    - feed optimizer output into bot configs or manager weights
+    - avoid hardcoding static assumptions forever
+    
+    Examples:
+    - bot weight adjustments from recent optimizer results
+    - per-regime preferred parameter presets
+    - confidence penalties for underperforming strategies
+    
+    3) Add proper validation workflow for strategy changes
+    Before any strategy setting changes automatically:
+    - backtest
+    - walk-forward or rolling validation
+    - compare against baseline
+    - require minimum thresholds:
+      - win rate
+      - PnL
+      - drawdown
+      - Sharpe-like score
+    
+    This prevents “research churn” from destabilizing the bot.
+    
+    4) Formalize risk governance at manager level
+    You already have strong foundations.
+    Next layer:
+    - daily loss cap
+    - consecutive-loss cooldowns
+    - per-coin / per-sector exposure buckets
+    - volatility-scaled position sizing
+    - stricter futures kill-switch rules
+    
+    5) Clean up data and output layout
+    Recommended future refactor:
+    - state/
+    - data/
+    - outputs/
+    - logs/
+    
+    But only do this with compatibility preserved, same as before.
+    
+    6) Improve observability
+    Next useful upgrades:
+    - dashboard trend charts from performance_journal.json
+    - per-bot equity curves
+    - regime history timeline
+    - rebalance history visualization
+    - recent blocked coins / risk breaker status on dashboard front page
+    
+    7) Re-enable a stable alerting channel
+    Once you are happy with uptime:
+    - restore WhatsApp or switch to a more reliable channel
+    - only send:
+      - breaker triggered
+      - rebalance event
+      - major drawdown
+      - new research signal summary
+      - cron failure
+    
+    8) Prepare VPS deployment
+    Once Oracle Cloud or another VPS is ready:
+    - move cron + scripts there
+    - keep repo synced
+    - preserve .env.local secret handling
+    - add startup checks and health verification
+    - optionally expose dashboard safely
+    
+    9) Only after that: consider live-trading path
+    Live trading should come after:
+    - candidate scorer
+    - stronger validation
+    - stable deployment
+    - alerting
+    - explicit Binance Earn-safe execution rules
+    
+    Recommended live path:
+    - spot-only first
+    - smallest possible size
+    - post-only / maker preference where possible
+    - no futures until spot governance proves stable
+    
+    Bottom line
+    
+    What’s achieved:
+    - you already have a functioning, organized, automated paper-trading platform
+    - the manager is much smarter than a simple script now
+    - the bot is documented, version-controlled, cron-driven, and actively running
+    - research ingestion is working again
+    - core architecture is in place
+    
+    What’s next:
+    - stop thinking in terms of “build more bots”
+    - start thinking in terms of “build the portfolio brain”
+    
+    The highest-value next build is:
+    - Unified Candidate Scorer
+    followed by:
+    - validation pipeline
+    - manager-level risk governance upgrades
+    - observability
+    - VPS deployment
+    - eventual live-trading promotion
+    
+    If you want, I can now turn this into a concrete Phase C/Phase D execution roadmap with:
+    - exact files to create/change
+    - data model for the candidate scorer
+    - scoring formula v1
+    - implementation order in 5–8 tasks.

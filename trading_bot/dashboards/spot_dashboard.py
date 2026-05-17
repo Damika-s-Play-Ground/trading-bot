@@ -10,7 +10,11 @@ import json
 import time
 import urllib.request
 from datetime import datetime, timezone
+from html import escape as _escape_html
 from pathlib import Path
+
+from trading_bot.dashboards.data_store import load_performance_runs, sync_all
+from trading_bot.dashboards.shared_ui import build_bar_chart, build_donut_chart, build_line_chart_svg
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 BASE_DIR = REPO_ROOT
@@ -110,6 +114,7 @@ def nav(active):
         ("dashboard.html", "📊 Spot", active == "spot"),
         ("futures.html", "🔵 Futures", active == "futures"),
         ("research.html", "🔬 Research", active == "research"),
+        ("todo.html", "🗒 Todo", active == "todo"),
         ("cron.html", "⏱ Cron", active == "cron"),
         ("glossary.html", "📖 Glossary", active == "glossary"),
     ]
@@ -227,7 +232,55 @@ def cron_status(run, max_age_s):
     return ("🔴", "error", f"Error ({int(age_sec // 60)}m ago)")
 
 
-def build_recent_trades_html(trades):
+def _trade_why(trade, manager_state):
+    bot = str(trade.get("bot", ""))
+    action = str(trade.get("action", "")).upper()
+    reason = str(trade.get("reason", "")).strip()
+    regime = str((manager_state or {}).get("regime", "sideways")).replace("_", " ")
+
+    if "BUY" in action or "LONG" in action:
+        if bot == "DCA + TP":
+            return (
+                "Buy logic: RSI was oversold, MACD and Bollinger filters were aligned, volume stayed healthy, "
+                f"and the manager allowed a new entry under the current {regime} regime."
+            )
+        if bot == "Trend Following":
+            return (
+                "Buy logic: price stayed above the 50MA and 20MA, MACD histogram stayed bullish, "
+                "and volume confirmed the trend continuation."
+            )
+        if bot == "Grid Trading":
+            return (
+                "Buy logic: price touched a lower grid band inside the active range, so the bot averaged in "
+                "with the grid."
+            )
+        if bot == "Momentum":
+            return (
+                "Buy logic: volume spiked above normal while price broke out above the moving average, "
+                "with RSI confirming momentum strength."
+            )
+        if bot == "Deep MR":
+            return (
+                "Buy logic: RSI fell below the extreme-oversold threshold on meaningful volume, which is the "
+                "core mean-reversion entry."
+            )
+        return f"Buy logic: the bot found a valid entry under the current {regime} market conditions."
+
+    reason_lower = reason.lower()
+    if any(token in reason_lower for token in ["tp", "take profit", "profit target"]):
+        return "Sell logic: take-profit target hit, so the bot locked gains at the strategy target."
+    if any(token in reason_lower for token in ["trail", "trailing"]):
+        return "Sell logic: the trailing stop fired after price pulled back from its recent peak."
+    if any(token in reason_lower for token in ["sl", "stop loss", "loss"]):
+        return "Sell logic: the stop-loss guard triggered to cap downside risk."
+    if any(token in reason_lower for token in ["trend broken", "below 20ma", "exit ma"]):
+        return "Sell logic: the trend filter broke, so the position was exited to avoid riding a failed trend."
+    if reason:
+        return f"Sell logic: {reason}."
+    return f"Sell logic: the bot exited based on its current strategy rules in the {regime} regime."
+
+
+def build_recent_trades_html(trades, manager_state=None):
     if not trades:
         return '<div class="empty-box">No trades recorded yet. This section should show the latest BUY/SELL actions across all 5 spot bots.</div>'
 
@@ -242,21 +295,25 @@ def build_recent_trades_html(trades):
         pnl = trade.get("pnl")
         reason = trade.get("reason", "")
         action_class = "trade-buy" if "BUY" in action or "LONG" in action else "trade-sell"
+        why = _trade_why(trade, manager_state)
         pnl_html = ""
         if pnl is not None:
             pnl_val = float(pnl or 0.0)
             pnl_class = "green" if pnl_val >= 0 else "red"
             pnl_html = f'<span class="trade-pill {pnl_class}">PnL {fmt_money(pnl_val)}</span>'
         spend_html = f'<span class="trade-pill">{fmt_money(float(usdt))}</span>' if usdt is not None else ""
-        reason_html = f'<span class="trade-reason">{reason}</span>' if reason else ""
+        reason_html = f'<span class="trade-reason">{_escape_html(reason)}</span>' if reason else ""
         rows.append(
             f'<div class="trade-item">'
-            f'<span class="trade-time">{ts}</span>'
-            f'<span class="trade-bot" style="border-color:{trade["bot_color"]};">{trade["bot"]}</span>'
-            f'<span class="trade-action {action_class}">{action}</span>'
-            f'<span class="trade-coin">{coin}</span>'
-            f'<span class="trade-price">@ {fmt_money(price)}</span>'
-            f'{spend_html}{pnl_html}{reason_html}'
+            f'  <div class="trade-main">'
+            f'    <span class="trade-time">{ts}</span>'
+            f'    <span class="trade-bot" style="border-color:{trade["bot_color"]};">{trade["bot"]}</span>'
+            f'    <span class="trade-action {action_class}">{action}</span>'
+            f'    <span class="trade-coin">{coin}</span>'
+            f'    <span class="trade-price">@ {fmt_money(price)}</span>'
+            f'    {spend_html}{pnl_html}{reason_html}'
+            f'  </div>'
+            f'  <div class="trade-why">Why: {why}</div>'
             f'</div>'
         )
     return "\n".join(rows)
@@ -306,6 +363,32 @@ def build_bot_cards(cards):
     return "\n".join(html)
 
 
+def build_dashboard_insights(cards, performance_runs):
+    if not cards:
+        return ""
+
+    total_value = sum(item["total"] for item in cards)
+    allocation_segments = [
+        {"label": item["bot"]["name"], "value": item["total"], "color": item["bot"]["color"]}
+        for item in cards
+    ]
+    equity_values = [float(run.get("portfolio_total", 0) or 0) for run in performance_runs]
+    equity_labels = []
+    for run in performance_runs:
+        ts = parse_time(run.get("timestamp"))
+        equity_labels.append(ts.astimezone().strftime("%m-%d %H:%M") if ts else "")
+    activity_rows = [
+        {"label": item["bot"]["name"], "value": item["trade_count"], "color": item["bot"]["color"], "meta": f"{item['positions_count']} open positions"}
+        for item in cards
+    ]
+    chart_parts = [
+        build_donut_chart(allocation_segments, title="Portfolio allocation", center_value=fmt_money(total_value), center_label="live value", subtitle="Current capital split by bot"),
+        build_line_chart_svg(equity_values, labels=equity_labels, title="Equity curve", subtitle="Historical portfolio totals from the performance journal", color="#60a5fa"),
+        build_bar_chart(activity_rows, title="Bot activity", subtitle="Trades and open-position footprint per bot", value_suffix=" trades"),
+    ]
+    return f'<div class="analytics-grid">{"".join(chart_parts)}</div>'
+
+
 def build_shared_style(active_color="#3b82f6"):
     return f'''
         * {{ margin:0; padding:0; box-sizing:border-box; }}
@@ -349,7 +432,8 @@ def build_shared_style(active_color="#3b82f6"):
         .pos-chip.green {{ background:#22c55e22; color:#22c55e; }}
         .pos-chip.red {{ background:#ef444422; color:#ef4444; }}
         .trade-log-section {{ background:#1e293b; border-radius:12px; padding:18px; max-height:360px; overflow-y:auto; }}
-        .trade-item {{ display:flex; align-items:center; flex-wrap:wrap; gap:8px; padding:8px 0; border-bottom:1px solid #33415555; font-size:12px; }}
+        .trade-item {{ display:flex; flex-direction:column; gap:6px; padding:10px 0; border-bottom:1px solid #33415555; font-size:12px; }}
+        .trade-main {{ display:flex; align-items:center; flex-wrap:wrap; gap:8px; }}
         .trade-time {{ color:#64748b; width:70px; }}
         .trade-bot {{ padding:2px 8px; border-radius:10px; border:1px solid #334155; background:#0f172a; font-size:11px; }}
         .trade-action {{ font-weight:700; }}
@@ -357,6 +441,7 @@ def build_shared_style(active_color="#3b82f6"):
         .trade-sell {{ color:#ef4444; }}
         .trade-pill {{ padding:2px 8px; border-radius:10px; background:#334155; color:#cbd5e1; }}
         .trade-reason {{ color:#64748b; font-size:11px; }}
+        .trade-why {{ color:#cbd5e1; font-size:11px; line-height:1.5; padding-left:70px; }}
         .empty-box {{ color:#64748b; text-align:center; padding:22px; font-size:13px; }}
         .mini-note {{ color:#94a3b8; font-size:12px; }}
         .cron-grid {{ display:grid; grid-template-columns:repeat(auto-fit,minmax(340px,1fr)); gap:16px; margin-bottom:20px; }}
@@ -376,11 +461,51 @@ def build_shared_style(active_color="#3b82f6"):
         th {{ background:#334155; color:#94a3b8; text-transform:uppercase; font-size:10px; }}
         .steps-list span {{ display:inline-block; margin-right:8px; }}
         .footer-note {{ color:#64748b; font-size:12px; margin-top:10px; }}
+        .analytics-grid {{ display:grid; grid-template-columns:repeat(auto-fit,minmax(280px,1fr)); gap:16px; margin-bottom:20px; }}
+        .chart-card {{ background:#1e293b; border-radius:16px; padding:18px; border:1px solid #334155; box-shadow:0 12px 30px rgba(15,23,42,.24); }}
+        .chart-head {{ display:flex; justify-content:space-between; align-items:flex-end; gap:12px; margin-bottom:12px; flex-wrap:wrap; }}
+        .chart-head strong {{ font-size:14px; }}
+        .chart-svg {{ width:100%; height:230px; display:block; background:linear-gradient(180deg,#0f172a 0%, #111827 100%); border-radius:14px; overflow:hidden; }}
+        .donut-card {{ display:flex; flex-direction:column; }}
+        .donut-wrap {{ display:grid; grid-template-columns:180px 1fr; gap:14px; align-items:center; }}
+        .donut {{ width:180px; height:180px; border-radius:50%; padding:16px; display:grid; place-items:center; position:relative; }}
+        .donut::after {{ content:''; position:absolute; inset:26px; border-radius:50%; background:#0f172a; box-shadow:inset 0 0 0 1px #334155; }}
+        .donut-inner {{ position:relative; z-index:1; text-align:center; }}
+        .donut-value {{ font-size:18px; font-weight:800; line-height:1.1; }}
+        .donut-label {{ font-size:11px; color:#94a3b8; margin-top:2px; text-transform:uppercase; letter-spacing:.6px; }}
+        .donut-legend {{ display:flex; flex-direction:column; gap:8px; }}
+        .legend-row {{ display:grid; grid-template-columns:14px 1fr auto; gap:8px; align-items:center; font-size:12px; color:#cbd5e1; }}
+        .legend-dot {{ width:10px; height:10px; border-radius:50%; display:inline-block; }}
+        .legend-val {{ color:#94a3b8; font-variant-numeric:tabular-nums; }}
+        .bar-chart {{ display:flex; flex-direction:column; gap:12px; }}
+        .bar-row-head {{ display:flex; justify-content:space-between; gap:12px; font-size:12px; margin-bottom:6px; }}
+        .bar-value {{ color:#94a3b8; font-variant-numeric:tabular-nums; }}
+        .bar-track {{ height:10px; background:#0f172a; border-radius:999px; overflow:hidden; box-shadow:inset 0 0 0 1px #334155; }}
+        .bar-fill {{ height:100%; border-radius:999px; }}
+        .bar-meta {{ color:#64748b; font-size:11px; margin-top:5px; }}
+        .section-toolbar {{ display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; margin-bottom:12px; }}
+        .search-input {{ width:min(360px,100%); background:#0f172a; border:1px solid #334155; color:#e2e8f0; padding:10px 12px; border-radius:12px; font-size:13px; outline:none; }}
+        .search-input:focus {{ border-color:#60a5fa; box-shadow:0 0 0 3px rgba(59,130,246,.16); }}
+        .chip-row {{ display:flex; flex-wrap:wrap; gap:8px; }}
+        .chip {{ padding:7px 11px; border-radius:999px; border:1px solid #334155; background:#0f172a; color:#cbd5e1; font-size:12px; cursor:pointer; user-select:none; }}
+        .chip.active {{ background:#3b82f622; border-color:#3b82f655; color:#93c5fd; }}
+        .chip:hover {{ border-color:#475569; }}
+        .muted {{ color:#94a3b8; }}
         @media (max-width:900px) {{
+            body {{ padding:16px; }}
             .top-row {{ grid-template-columns:1fr; }}
             .alloc-row {{ grid-template-columns:1fr; }}
             .bot-grid {{ grid-template-columns:1fr; }}
             .bot-stats {{ grid-template-columns:repeat(2,1fr); }}
+            .donut-wrap {{ grid-template-columns:1fr; justify-items:center; }}
+            .donut-legend {{ width:100%; }}
+            .chart-svg {{ height:200px; }}
+        }}
+        @media (max-width:600px) {{
+            .nav {{ gap:8px; }}
+            .nav a {{ width:calc(50% - 4px); text-align:center; }}
+            .bot-stats {{ grid-template-columns:1fr 1fr; gap:10px; }}
+            .top-card, .panel, .bot-card, .section-card, .chart-card {{ padding:16px; }}
         }}
     '''
 
@@ -388,11 +513,13 @@ def build_shared_style(active_color="#3b82f6"):
 def build_spot_page(manager_state, prices, spot_data, cron_runs):
     allocations_html = build_allocation_rows(spot_data["cards"])
     cards_html = build_bot_cards(spot_data["cards"])
-    trades_html = build_recent_trades_html(spot_data["recent_trades"])
+    trades_html = build_recent_trades_html(spot_data["recent_trades"], manager_state)
     all_positions_json = json.dumps(spot_data["all_positions"])
     regime = manager_state.get("regime", "sideways")
     regime_display = REGIME_ICONS.get(regime, "➡️ SIDEWAYS")
     cron_count = len(cron_runs)
+    performance_runs = load_performance_runs(40)
+    insights_html = build_dashboard_insights(spot_data["cards"], performance_runs)
 
     html = f'''<!DOCTYPE html>
 <html lang="en">
@@ -425,6 +552,8 @@ def build_spot_page(manager_state, prices, spot_data, cron_runs):
             <div class="sub">{spot_data['total_positions']} open positions across 5 bots</div>
         </div>
     </div>
+
+    {insights_html}
 
     <div class="section-card" style="margin-bottom:20px;">
         <div style="display:flex;justify-content:space-between;gap:12px;align-items:center;margin-bottom:10px;flex-wrap:wrap;">
@@ -539,7 +668,7 @@ def build_cron_job_cards(runs):
     cards = []
     for job_key, meta in CRON_JOBS.items():
         run = latest_by_job.get(job_key)
-        max_age = 1800 if job_key == "trading-bot" else 600
+        max_age = 2700 if job_key == "trading-bot" else 600
         icon, css, label = cron_status(run, max_age)
         rows = [
             ("Job ID", meta["job_id"]),
@@ -658,14 +787,17 @@ def build_cron_page(runs):
 
 
 def main():
+    sync_all()
     manager_state = load_json(MANAGER_FILE, {})
     prices = fetch_prices()
     spot_data = load_spot_data(prices, manager_state)
     cron_runs = load_cron_runs()
     build_spot_page(manager_state, prices, spot_data, cron_runs)
     build_cron_page(cron_runs)
+    from trading_bot.dashboards.todo_page import build_todo_page
+    build_todo_page()
     regime = manager_state.get("regime", "sideways")
-    print(f"✅ Dashboards generated: {SPOT_OUTPUT} and {CRON_OUTPUT}")
+    print(f"✅ Dashboards generated: {SPOT_OUTPUT}, {CRON_OUTPUT}, and {REPO_ROOT / 'todo.html'}")
     print(f"   Spot portfolio: {fmt_money(spot_data['total_portfolio'])} · regime: {regime} · cron logs: {len(cron_runs)}")
 
 
