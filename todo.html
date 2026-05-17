@@ -8,13 +8,17 @@
     <style>
         
         * { margin:0; padding:0; box-sizing:border-box; }
-        body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif; background:#0f172a; color:#e2e8f0; padding:24px; }
-        h1 { font-size:24px; margin-bottom:4px; }
-        .subtitle { color:#94a3b8; font-size:14px; margin-bottom:20px; }
-        .nav { display:flex; gap:12px; margin-bottom:24px; flex-wrap:wrap; }
-        .nav a { padding:8px 16px; border-radius:8px; background:#1e293b; color:#94a3b8; text-decoration:none; font-size:13px; }
-        .nav a.active { background:#22c55e; color:white; }
-        .nav a:hover { background:#334155; }
+        body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif; background:#0f172a; color:#e2e8f0; padding:0; }
+        .page-shell { max-width:1540px; margin:0 auto; padding:24px; }
+        .page-header { margin-bottom:18px; }
+        h1 { font-size:28px; line-height:1.15; margin-bottom:6px; font-weight:800; letter-spacing:-0.02em; }
+        .subtitle { color:#94a3b8; font-size:14px; line-height:1.65; margin-bottom:0; max-width:920px; }
+        .nav { display:flex; gap:10px; margin:0 0 24px; flex-wrap:wrap; padding:6px; border-radius:18px; background:rgba(15,23,42,.78); border:1px solid #243244; box-shadow:0 14px 34px rgba(15,23,42,.22); overflow-x:auto; scrollbar-width:none; }
+        .nav::-webkit-scrollbar { display:none; }
+        .nav a { display:inline-flex; align-items:center; justify-content:center; min-height:42px; padding:10px 16px; border-radius:12px; background:transparent; color:#94a3b8; text-decoration:none; font-size:13px; font-weight:600; white-space:nowrap; border:1px solid transparent; transition:background .18s ease, border-color .18s ease, color .18s ease, transform .18s ease; }
+        .nav a.active { background:color-mix(in srgb, #22c55e 20%, transparent); color:#f8fafc; border-color:color-mix(in srgb, #22c55e 50%, #ffffff 6%); box-shadow:inset 0 0 0 1px color-mix(in srgb, #22c55e 28%, transparent); }
+        .nav a:hover { background:#1e293b; color:#e2e8f0; border-color:#334155; transform:translateY(-1px); }
+        .nav a:focus-visible { outline:none; box-shadow:0 0 0 3px color-mix(in srgb, #22c55e 24%, transparent); }
         .top-row { display:grid; grid-template-columns:2fr 1fr 1fr; gap:16px; margin-bottom:20px; }
         .top-card, .panel, .bot-card, .section-card { background:#1e293b; border-radius:12px; padding:18px; }
         .top-card .label, .section-kicker { color:#94a3b8; font-size:11px; text-transform:uppercase; letter-spacing:0.5px; }
@@ -146,7 +150,7 @@
         .chart-tooltip { position:fixed; z-index:9999; pointer-events:none; max-width:280px; padding:9px 11px; border-radius:10px; background:rgba(15,23,42,.96); color:#e2e8f0; border:1px solid #334155; box-shadow:0 12px 26px rgba(15,23,42,.30); font-size:11px; line-height:1.45; opacity:0; transform:translate(-9999px,-9999px); transition:opacity .12s ease; }
         .chart-tooltip.visible { opacity:1; }
         @media (max-width:900px) {
-            body { padding:16px; }
+            .page-shell { padding:20px; }
             .top-row { grid-template-columns:1fr; }
             .alloc-row { grid-template-columns:1fr; }
             .bot-grid { grid-template-columns:1fr; }
@@ -159,8 +163,10 @@
             .trade-grid { grid-template-columns:1fr; }
         }
         @media (max-width:600px) {
-            .nav { gap:8px; }
-            .nav a { width:calc(50% - 4px); text-align:center; }
+            .page-shell { padding:16px; }
+            h1 { font-size:24px; }
+            .nav { display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:8px; padding:8px; overflow-x:visible; }
+            .nav a { width:100%; min-height:40px; padding:9px 12px; text-align:center; }
             .bot-stats { grid-template-columns:1fr 1fr; gap:10px; }
             .top-card, .panel, .bot-card, .section-card, .chart-card { padding:16px; }
             .trade-log-section { padding:14px; }
@@ -171,8 +177,6 @@
             .trade-why { padding:9px 10px; }
         }
     
-        body { padding:0; }
-        .page-shell { max-width:1540px; margin:0 auto; padding:24px; }
         .hero {
             display:grid; grid-template-columns:1.6fr 1fr; gap:16px; margin-bottom:18px;
         }
@@ -233,11 +237,9 @@
             .chart-grid { grid-template-columns:1fr; }
         }
         @media (max-width: 640px) {
-            .page-shell { padding:16px; }
-            .nav a { width:calc(50% - 4px); text-align:center; }
+            .nav a { width:100%; text-align:center; }
             .search-input { width:100%; }
             .todo-grid { grid-template-columns:1fr; }
-            .trade-why { padding-left:0; }
         }
     </style>
     <script>
@@ -396,8 +398,10 @@
 </head>
 <body>
     <div class="page-shell">
-    <h1>🗒 Project Roadmap / TODO</h1>
-    <p class="subtitle">A live, filterable roadmap view pulled from the dashboard database. Click any card to move it between the open and done sections with completion state synced into the dashboard store.</p>
+    <div class="page-header">
+        <h1>🗒 Project Roadmap / TODO</h1>
+        <p class="subtitle">A live, filterable roadmap view pulled from the dashboard database. Click any card to move it between the open and done sections with completion state synced into the dashboard store.</p>
+    </div>
     <div class="nav">
     <a href="/dashboard">📊 Spot</a>
     <a href="/futures">🔵 Futures</a>
@@ -427,7 +431,7 @@
             </div>
         </div>
         
-    <div class="chart-card donut-card" data-chart="donut-5b9b82cc8700">
+    <div class="chart-card donut-card" data-chart="donut-727d200c7713">
         <div class="chart-head">
             <div>
                 <strong>Roadmap progress</strong>
@@ -438,14 +442,14 @@
             <div class="donut">
                 <svg viewBox="0 0 160 160" class="donut-svg" role="img" aria-label="Roadmap progress">
                     <circle cx="80" cy="80" r="56" fill="none" stroke="#243244" stroke-width="18" />
-                    <g class='donut-segment-group' tabindex='0' title='Done · 4.0 · 1.5% of total' data-chart='donut-5b9b82cc8700' data-segment='0' data-tooltip='Done · 4.0 · 1.5% of total'><circle class='donut-segment' cx='80' cy='80' r='56' fill='none' stroke='#22c55e' stroke-width='18' stroke-linecap='round' stroke-dasharray='5.372 346.486' stroke-dashoffset='-0.000' transform='rotate(-90 80 80)' /></g><g class='donut-segment-group' tabindex='0' title='Open · 3.0 · 1.1% of total' data-chart='donut-5b9b82cc8700' data-segment='1' data-tooltip='Open · 3.0 · 1.1% of total'><circle class='donut-segment' cx='80' cy='80' r='56' fill='none' stroke='#3b82f6' stroke-width='18' stroke-linecap='round' stroke-dasharray='4.029 347.829' stroke-dashoffset='-5.372' transform='rotate(-90 80 80)' /></g><g class='donut-segment-group' tabindex='0' title='Notes · 255.0 · 97.3% of total' data-chart='donut-5b9b82cc8700' data-segment='2' data-tooltip='Notes · 255.0 · 97.3% of total'><circle class='donut-segment' cx='80' cy='80' r='56' fill='none' stroke='#94a3b8' stroke-width='18' stroke-linecap='round' stroke-dasharray='342.458 9.401' stroke-dashoffset='-9.401' transform='rotate(-90 80 80)' /></g>
+                    <g class='donut-segment-group' tabindex='0' title='Done · 4.0 · 1.5% of total' data-chart='donut-727d200c7713' data-segment='0' data-tooltip='Done · 4.0 · 1.5% of total'><circle class='donut-segment' cx='80' cy='80' r='56' fill='none' stroke='#22c55e' stroke-width='18' stroke-linecap='round' stroke-dasharray='5.372 346.486' stroke-dashoffset='-0.000' transform='rotate(-90 80 80)' /></g><g class='donut-segment-group' tabindex='0' title='Open · 4.0 · 1.5% of total' data-chart='donut-727d200c7713' data-segment='1' data-tooltip='Open · 4.0 · 1.5% of total'><circle class='donut-segment' cx='80' cy='80' r='56' fill='none' stroke='#3b82f6' stroke-width='18' stroke-linecap='round' stroke-dasharray='5.372 346.486' stroke-dashoffset='-5.372' transform='rotate(-90 80 80)' /></g><g class='donut-segment-group' tabindex='0' title='Notes · 254.0 · 96.9% of total' data-chart='donut-727d200c7713' data-segment='2' data-tooltip='Notes · 254.0 · 96.9% of total'><circle class='donut-segment' cx='80' cy='80' r='56' fill='none' stroke='#94a3b8' stroke-width='18' stroke-linecap='round' stroke-dasharray='341.115 10.744' stroke-dashoffset='-10.744' transform='rotate(-90 80 80)' /></g>
                 </svg>
                 <div class="donut-inner">
                     <div class="donut-value" id="todo-donut-value">2%</div>
                     <div class="donut-label" id="todo-donut-label">complete</div>
                 </div>
             </div>
-            <div class="donut-legend"><div class='legend-row' tabindex='0' title='Done · 4.0 · 1.5% of total' data-chart='donut-5b9b82cc8700' data-segment='0' data-tooltip='Done · 4.0 · 1.5% of total'><span class='legend-dot' style='background:#22c55e'></span><span>Done</span><span class='legend-meta'><span class='legend-val'>4.0</span><span class='legend-share'>1.5%</span></span></div><div class='legend-row' tabindex='0' title='Open · 3.0 · 1.1% of total' data-chart='donut-5b9b82cc8700' data-segment='1' data-tooltip='Open · 3.0 · 1.1% of total'><span class='legend-dot' style='background:#3b82f6'></span><span>Open</span><span class='legend-meta'><span class='legend-val'>3.0</span><span class='legend-share'>1.1%</span></span></div><div class='legend-row' tabindex='0' title='Notes · 255.0 · 97.3% of total' data-chart='donut-5b9b82cc8700' data-segment='2' data-tooltip='Notes · 255.0 · 97.3% of total'><span class='legend-dot' style='background:#94a3b8'></span><span>Notes</span><span class='legend-meta'><span class='legend-val'>255.0</span><span class='legend-share'>97.3%</span></span></div></div>
+            <div class="donut-legend"><div class='legend-row' tabindex='0' title='Done · 4.0 · 1.5% of total' data-chart='donut-727d200c7713' data-segment='0' data-tooltip='Done · 4.0 · 1.5% of total'><span class='legend-dot' style='background:#22c55e'></span><span>Done</span><span class='legend-meta'><span class='legend-val'>4.0</span><span class='legend-share'>1.5%</span></span></div><div class='legend-row' tabindex='0' title='Open · 4.0 · 1.5% of total' data-chart='donut-727d200c7713' data-segment='1' data-tooltip='Open · 4.0 · 1.5% of total'><span class='legend-dot' style='background:#3b82f6'></span><span>Open</span><span class='legend-meta'><span class='legend-val'>4.0</span><span class='legend-share'>1.5%</span></span></div><div class='legend-row' tabindex='0' title='Notes · 254.0 · 96.9% of total' data-chart='donut-727d200c7713' data-segment='2' data-tooltip='Notes · 254.0 · 96.9% of total'><span class='legend-dot' style='background:#94a3b8'></span><span>Notes</span><span class='legend-meta'><span class='legend-val'>254.0</span><span class='legend-share'>96.9%</span></span></div></div>
         </div>
     </div>
     
@@ -454,8 +458,8 @@
     <div class="stats-grid">
         <div class="stat-card"><div class="label">Total</div><div class="value" id="stat-total">262</div><div class="sub">roadmap items</div></div>
         <div class="stat-card"><div class="label">Done</div><div class="value" id="stat-done">4</div><div class="sub">completed items</div></div>
-        <div class="stat-card"><div class="label">Open</div><div class="value" id="stat-open">3</div><div class="sub">next actions</div></div>
-        <div class="stat-card"><div class="label">Notes</div><div class="value" id="stat-notes">255</div><div class="sub">operational reminders</div></div>
+        <div class="stat-card"><div class="label">Open</div><div class="value" id="stat-open">4</div><div class="sub">next actions</div></div>
+        <div class="stat-card"><div class="label">Notes</div><div class="value" id="stat-notes">254</div><div class="sub">operational reminders</div></div>
     </div>
 
     <div class="progress-wrap">
@@ -576,7 +580,7 @@
         <div class="todo-section">
             <div class="todo-section-header">
                 <strong>Open work</strong>
-                <span class="mini-note"><span id="open-count">3</span> items waiting</span>
+                <span class="mini-note"><span id="open-count">4</span> items waiting</span>
             </div>
             <div class="todo-grid" id="todo-open-grid">
                 
@@ -1684,14 +1688,14 @@
                      data-key="96eabb707c9fda3107"
                      data-stage="45"
                      data-base-status="note"
-                     data-status="note"
+                     data-status="open"
                      data-category="product"
-                     data-search="one unified $1,200 target paper portfolio product note stage 45"
+                     data-search="one unified $1,200 target paper portfolio product open stage 45"
                      onclick="toggleTask(this)">
                 <div class="todo-head">
                     <div class="todo-title-wrap">
                         <span class="todo-index">#45</span>
-                        <span class="todo-status status-note">📝 Note</span>
+                        <span class="todo-status status-open">⬜ Open</span>
                         <span class="todo-category">Product</span>
                     </div>
                     <span class="todo-check">✓</span>
@@ -7135,7 +7139,7 @@
         <div class="todo-section">
             <div class="todo-section-header">
                 <strong>Operational notes</strong>
-                <span class="mini-note"><span id="note-count">255</span> reminders</span>
+                <span class="mini-note"><span id="note-count">254</span> reminders</span>
             </div>
             <div class="todo-grid" id="todo-note-grid"></div>
         </div>

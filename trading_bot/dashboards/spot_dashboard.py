@@ -396,13 +396,17 @@ def build_dashboard_insights(cards, performance_runs):
 def build_shared_style(active_color="#3b82f6"):
     style = '''
         * {{ margin:0; padding:0; box-sizing:border-box; }}
-        body {{ font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif; background:#0f172a; color:#e2e8f0; padding:24px; }}
-        h1 {{ font-size:24px; margin-bottom:4px; }}
-        .subtitle {{ color:#94a3b8; font-size:14px; margin-bottom:20px; }}
-        .nav {{ display:flex; gap:12px; margin-bottom:24px; flex-wrap:wrap; }}
-        .nav a {{ padding:8px 16px; border-radius:8px; background:#1e293b; color:#94a3b8; text-decoration:none; font-size:13px; }}
-        .nav a.active { background:__ACTIVE_COLOR__; color:white; }
-        .nav a:hover {{ background:#334155; }}
+        body {{ font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif; background:#0f172a; color:#e2e8f0; padding:0; }}
+        .page-shell {{ max-width:1540px; margin:0 auto; padding:24px; }}
+        .page-header {{ margin-bottom:18px; }}
+        h1 {{ font-size:28px; line-height:1.15; margin-bottom:6px; font-weight:800; letter-spacing:-0.02em; }}
+        .subtitle {{ color:#94a3b8; font-size:14px; line-height:1.65; margin-bottom:0; max-width:920px; }}
+        .nav {{ display:flex; gap:10px; margin:0 0 24px; flex-wrap:wrap; padding:6px; border-radius:18px; background:rgba(15,23,42,.78); border:1px solid #243244; box-shadow:0 14px 34px rgba(15,23,42,.22); overflow-x:auto; scrollbar-width:none; }}
+        .nav::-webkit-scrollbar {{ display:none; }}
+        .nav a {{ display:inline-flex; align-items:center; justify-content:center; min-height:42px; padding:10px 16px; border-radius:12px; background:transparent; color:#94a3b8; text-decoration:none; font-size:13px; font-weight:600; white-space:nowrap; border:1px solid transparent; transition:background .18s ease, border-color .18s ease, color .18s ease, transform .18s ease; }}
+        .nav a.active {{ background:color-mix(in srgb, __ACTIVE_COLOR__ 20%, transparent); color:#f8fafc; border-color:color-mix(in srgb, __ACTIVE_COLOR__ 50%, #ffffff 6%); box-shadow:inset 0 0 0 1px color-mix(in srgb, __ACTIVE_COLOR__ 28%, transparent); }}
+        .nav a:hover {{ background:#1e293b; color:#e2e8f0; border-color:#334155; transform:translateY(-1px); }}
+        .nav a:focus-visible {{ outline:none; box-shadow:0 0 0 3px color-mix(in srgb, __ACTIVE_COLOR__ 24%, transparent); }}
         .top-row {{ display:grid; grid-template-columns:2fr 1fr 1fr; gap:16px; margin-bottom:20px; }}
         .top-card, .panel, .bot-card, .section-card {{ background:#1e293b; border-radius:12px; padding:18px; }}
         .top-card .label, .section-kicker {{ color:#94a3b8; font-size:11px; text-transform:uppercase; letter-spacing:0.5px; }}
@@ -534,7 +538,7 @@ def build_shared_style(active_color="#3b82f6"):
         .chart-tooltip { position:fixed; z-index:9999; pointer-events:none; max-width:280px; padding:9px 11px; border-radius:10px; background:rgba(15,23,42,.96); color:#e2e8f0; border:1px solid #334155; box-shadow:0 12px 26px rgba(15,23,42,.30); font-size:11px; line-height:1.45; opacity:0; transform:translate(-9999px,-9999px); transition:opacity .12s ease; }
         .chart-tooltip.visible { opacity:1; }
         @media (max-width:900px) {
-            body { padding:16px; }
+            .page-shell { padding:20px; }
             .top-row { grid-template-columns:1fr; }
             .alloc-row { grid-template-columns:1fr; }
             .bot-grid { grid-template-columns:1fr; }
@@ -547,8 +551,10 @@ def build_shared_style(active_color="#3b82f6"):
             .trade-grid { grid-template-columns:1fr; }
         }
         @media (max-width:600px) {
-            .nav { gap:8px; }
-            .nav a { width:calc(50% - 4px); text-align:center; }
+            .page-shell { padding:16px; }
+            h1 { font-size:24px; }
+            .nav { display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:8px; padding:8px; overflow-x:visible; }
+            .nav a { width:100%; min-height:40px; padding:9px 12px; text-align:center; }
             .bot-stats { grid-template-columns:1fr 1fr; gap:10px; }
             .top-card, .panel, .bot-card, .section-card, .chart-card { padding:16px; }
             .trade-log-section { padding:14px; }
@@ -650,8 +656,11 @@ def build_cron_page(runs):
     <style>{build_shared_style('#0ea5e9')}</style>
 </head>
 <body>
-    <h1>⏱ Cron Jobs Monitor</h1>
-    <p class="subtitle">Job schedules, freshness, research-file activity, and run history</p>
+    <div class="page-shell">
+    <div class="page-header">
+        <h1>⏱ Cron Jobs Monitor</h1>
+        <p class="subtitle">Job schedules, freshness, research-file activity, and run history</p>
+    </div>
     {nav('cron')}
 
     <div class="cron-grid">
@@ -675,6 +684,7 @@ def build_cron_page(runs):
             Research scraper health is judged by both cron logs and the freshness of {RESEARCH_FILE}.
             A “started” status means the scheduler fired; the file timestamp tells you whether the research output actually refreshed.
         </div>
+    </div>
     </div>
 </body>
 </html>'''

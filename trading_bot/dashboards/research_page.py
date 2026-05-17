@@ -119,8 +119,6 @@ def build_research_page() -> None:
     <title>AI Crypto Research</title>
     <style>
         {build_shared_style('#3b82f6')}
-        body {{ padding:0; }}
-        .page-shell {{ max-width:1540px; margin:0 auto; padding:24px; }}
         .hero {{
             display:grid; grid-template-columns:1.2fr 1fr; gap:16px; margin-bottom:18px;
         }}
@@ -176,8 +174,7 @@ def build_research_page() -> None:
             .research-card-grid, .research-detail-grid {{ grid-template-columns:1fr; }}
         }}
         @media (max-width: 640px) {{
-            .page-shell {{ padding:16px; }}
-            .nav a {{ width:calc(50% - 4px); text-align:center; }}
+            .nav a {{ width:100%; text-align:center; }}
             .search-input {{ width:100%; }}
         }}
     </style>
@@ -282,8 +279,10 @@ def build_research_page() -> None:
 </head>
 <body>
     <div class="page-shell">
-    <h1>🔬 AI Crypto Research</h1>
-    <p class="subtitle">Interactive research vault — filter by platform, search by topic, and mark items as evaluated.</p>
+    <div class="page-header">
+        <h1>🔬 AI Crypto Research</h1>
+        <p class="subtitle">Interactive research vault — filter by platform, search by topic, and mark items as evaluated.</p>
+    </div>
     {nav('research')}
 
     <div class="hero">

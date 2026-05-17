@@ -151,14 +151,16 @@ html = f"""<!DOCTYPE html>
             .chart-grid {{ grid-template-columns:1fr; }}
         }}
         @media (max-width: 640px) {{
-            body {{ padding:16px; }}
-            .nav a {{ width:calc(50% - 4px); text-align:center; }}
+            .nav a {{ width:100%; text-align:center; }}
         }}
     </style>
 </head>
 <body>
-    <h1>🔵 Futures Paper Trading</h1>
-    <p class="subtitle">3x leverage · paper only · risk-first overview of open positions and liquidation buffers</p>
+    <div class="page-shell">
+    <div class="page-header">
+        <h1>🔵 Futures Paper Trading</h1>
+        <p class="subtitle">3x leverage · paper only · risk-first overview of open positions and liquidation buffers</p>
+    </div>
     {nav('futures')}
 
     <div class="hero">
@@ -230,6 +232,7 @@ html = f"""<!DOCTYPE html>
     </div>
 
     <p class="stats-note" style="margin-top:16px;">Page auto-refreshes every 2 minutes. Prices update when the file regenerates.</p>
+    </div>
 </body>
 </html>"""
 

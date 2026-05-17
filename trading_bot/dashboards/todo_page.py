@@ -127,8 +127,6 @@ def build_todo_page() -> None:
     <title>Project Roadmap / TODO</title>
     <style>
         {build_shared_style('#22c55e')}
-        body {{ padding:0; }}
-        .page-shell {{ max-width:1540px; margin:0 auto; padding:24px; }}
         .hero {{
             display:grid; grid-template-columns:1.6fr 1fr; gap:16px; margin-bottom:18px;
         }}
@@ -189,11 +187,9 @@ def build_todo_page() -> None:
             .chart-grid {{ grid-template-columns:1fr; }}
         }}
         @media (max-width: 640px) {{
-            .page-shell {{ padding:16px; }}
-            .nav a {{ width:calc(50% - 4px); text-align:center; }}
+            .nav a {{ width:100%; text-align:center; }}
             .search-input {{ width:100%; }}
             .todo-grid {{ grid-template-columns:1fr; }}
-            .trade-why {{ padding-left:0; }}
         }}
     </style>
     <script>
@@ -352,8 +348,10 @@ def build_todo_page() -> None:
 </head>
 <body>
     <div class="page-shell">
-    <h1>🗒 Project Roadmap / TODO</h1>
-    <p class="subtitle">A live, filterable roadmap view pulled from the dashboard database. Click any card to move it between the open and done sections with completion state synced into the dashboard store.</p>
+    <div class="page-header">
+        <h1>🗒 Project Roadmap / TODO</h1>
+        <p class="subtitle">A live, filterable roadmap view pulled from the dashboard database. Click any card to move it between the open and done sections with completion state synced into the dashboard store.</p>
+    </div>
     {nav('todo')}
 
     <div class="hero">

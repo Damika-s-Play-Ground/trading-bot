@@ -1002,14 +1002,18 @@ html = f"""<!DOCTYPE html>
     <style>
         * {{ margin:0; padding:0; box-sizing:border-box; }}
         body {{ font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
-               background:#0f172a; color:#e2e8f0; padding:24px; }}
-        h1 {{ font-size:24px; margin-bottom:4px; }}
-        .subtitle {{ color:#94a3b8; font-size:14px; margin-bottom:24px; }}
-        .nav {{ display:flex; gap:12px; margin-bottom:24px; }}
-        .nav a {{ padding:8px 16px; border-radius:8px; background:#1e293b; color:#94a3b8;
-                 text-decoration:none; font-size:13px; transition:0.2s; }}
-        .nav a.active {{ background:#3b82f6; color:white; }}
-        .nav a:hover {{ background:#334155; }}
+               background:#0f172a; color:#e2e8f0; padding:0; }}
+        .page-shell {{ max-width:1540px; margin:0 auto; padding:24px; }}
+        .page-header {{ margin-bottom:18px; }}
+        h1 {{ font-size:28px; line-height:1.15; margin-bottom:6px; font-weight:800; letter-spacing:-0.02em; }}
+        .subtitle {{ color:#94a3b8; font-size:14px; line-height:1.65; margin-bottom:0; max-width:920px; }}
+        .nav {{ display:flex; gap:10px; margin:0 0 24px; flex-wrap:wrap; padding:6px; border-radius:18px; background:rgba(15,23,42,.78); border:1px solid #243244; box-shadow:0 14px 34px rgba(15,23,42,.22); overflow-x:auto; scrollbar-width:none; }}
+        .nav::-webkit-scrollbar {{ display:none; }}
+        .nav a {{ display:inline-flex; align-items:center; justify-content:center; min-height:42px; padding:10px 16px; border-radius:12px; background:transparent; color:#94a3b8;
+                 text-decoration:none; font-size:13px; font-weight:600; white-space:nowrap; border:1px solid transparent; transition:background .18s ease, border-color .18s ease, color .18s ease, transform .18s ease; }}
+        .nav a.active {{ background:rgba(59,130,246,.2); color:#f8fafc; border-color:rgba(59,130,246,.5); box-shadow:inset 0 0 0 1px rgba(59,130,246,.28); }}
+        .nav a:hover {{ background:#1e293b; color:#e2e8f0; border-color:#334155; transform:translateY(-1px); }}
+        .nav a:focus-visible {{ outline:none; box-shadow:0 0 0 3px rgba(59,130,246,.18); }}
         
         /* Search & Filter */
         .controls {{ display:flex; gap:12px; margin-bottom:20px; flex-wrap:wrap; }}
@@ -1055,6 +1059,15 @@ html = f"""<!DOCTYPE html>
         .hl {{ background:#3b82f644; border-radius:2px; padding:0 2px; }}
         
         .no-result {{ color:#64748b; text-align:center; padding:40px; }}
+        @media (max-width: 900px) {{
+            .page-shell {{ padding:20px; }}
+        }}
+        @media (max-width: 640px) {{
+            .page-shell {{ padding:16px; }}
+            h1 {{ font-size:24px; }}
+            .nav {{ display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:8px; padding:8px; overflow-x:visible; }}
+            .nav a {{ width:100%; min-height:40px; padding:9px 12px; text-align:center; }}
+        }}
     </style>
     <script>
     // Bookmark state
@@ -1133,8 +1146,11 @@ html = f"""<!DOCTYPE html>
     </script>
 </head>
 <body>
-    <h1>📖 Trading Glossary</h1>
-    <p class="subtitle">Technical terms explained with examples, diagrams, and real bot references</p>
+    <div class="page-shell">
+    <div class="page-header">
+        <h1>📖 Trading Glossary</h1>
+        <p class="subtitle">Technical terms explained with examples, diagrams, and real bot references</p>
+    </div>
     
     <div class="nav">
         <a href="/dashboard">📊 Spot</a>
@@ -1171,6 +1187,7 @@ html = f"""<!DOCTYPE html>
     <p style="color:#64748b;font-size:11px;margin-top:24px;">
         Click any term to expand. Click ★ to bookmark for quick access. Data and examples are based on your actual bot and portfolio.
     </p>
+    </div>
 </body>
 </html>"""
 
