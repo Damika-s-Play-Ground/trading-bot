@@ -17,6 +17,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from trading_bot.analysis.allocation_optimizer import build_snapshot as build_allocation_optimizer_snapshot
+from trading_bot.core.promotion_governance import build_promotion_report
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 BASE_DIR = REPO_ROOT
@@ -911,6 +912,7 @@ def main():
         "performance_journal_file": str(PERFORMANCE_JOURNAL_FILE),
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }
+    manager_state["promotion_readiness"] = build_promotion_report(manager_state)
     save_json(MANAGER_STATE_FILE, manager_state)
 
     try:
