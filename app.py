@@ -11,6 +11,7 @@ from flask import Flask, abort, jsonify, redirect, render_template_string, reque
 
 from trading_bot.dashboards.dashboard_backend import dashboard_payload
 from trading_bot.dashboards.data_store import (
+    create_todo_item,
     load_research_items,
     load_research_state_overrides,
     load_todo_items,
@@ -61,7 +62,6 @@ TODO_CATEGORY_COPY = {
 TODO_NEXT_ACTION_COPY = {
     "open": "Treat this as upcoming work. Review the dependent outputs and implement the smallest production-safe next step.",
     "done": "No action needed unless the implementation has drifted and the summary needs to be revalidated.",
-    "note": "Use this as live operating context rather than a build task. It should inform prioritization, not be toggled like feature work.",
 }
 
 app = Flask(__name__)
@@ -221,12 +221,26 @@ def api_todo_data():
                 "status_label": {
                     "done": "Completed",
                     "open": "Upcoming",
-                    "note": "Live note",
                 }.get(status, status.title()),
                 "can_toggle": str(item.get("base_status", item.get("status", "open"))) == "open",
+                "is_custom": bool(payload.get("is_custom")),
             }
         )
     return jsonify({"stats": todo_stats(items), "items": payload_items})
+
+
+@app.post("/api/todo-items")
+def api_todo_items_post():
+    payload = request.get_json(silent=True) or {}
+    title = str(payload.get("title", "")).strip()
+    notes = str(payload.get("notes", "") or "").strip()
+    if not title:
+        return jsonify({"ok": False, "error": "title is required"}), 400
+    try:
+        item = create_todo_item(title=title, notes=notes, source="dashboard")
+    except ValueError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+    return jsonify({"ok": True, "item": item})
 
 
 @app.post("/api/todo-state")

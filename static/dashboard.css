@@ -79,9 +79,14 @@ button, input { font: inherit; }
 .bar-meta { color: var(--muted-2); font-size: 11px; margin-top: 5px; }
 .equity-toolbar { display: grid; grid-template-columns: 1fr; gap: 12px; margin-bottom: 14px; }
 .toolbar-group { display: flex; gap: 8px; flex-wrap: wrap; align-items: end; }
+.toolbar-group-range-single { justify-content: space-between; }
 .toolbar-group-inputs { display: grid; grid-template-columns: repeat(2, minmax(190px, 1fr)); gap: 10px; }
 .input-stack { display: grid; gap: 6px; color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .08em; }
+.input-stack-wide { min-width: min(560px, 100%); flex: 1 1 420px; }
+.date-range-picker { display: grid; grid-template-columns: minmax(0,1fr) auto minmax(0,1fr); align-items: center; gap: 10px; padding: 10px 12px; border: 1px solid var(--line-2); background: rgba(15,23,42,.9); border-radius: 14px; }
+.range-separator { color: var(--muted-2); font-size: 12px; }
 .range-input { width: 100%; border: 1px solid var(--line-2); background: rgba(15,23,42,.9); color: var(--text); border-radius: 12px; padding: 9px 11px; }
+.date-range-picker .range-input { border-color: rgba(71,85,105,.65); background: rgba(2,6,23,.55); }
 .range-input:focus { outline: none; border-color: rgba(96,165,250,.65); box-shadow: 0 0 0 3px rgba(37,99,235,.18); }
 .equity-stats-grid { display: grid; grid-template-columns: repeat(6, minmax(0,1fr)); gap: 10px; margin-bottom: 14px; }
 .mini-stat { border: 1px solid var(--line); background: rgba(15,23,42,.82); border-radius: 14px; padding: 10px 12px; }
@@ -192,6 +197,9 @@ button, input { font: inherit; }
   .top-grid { grid-template-columns: 1fr; }
   .donut-layout { grid-template-columns: 1fr; }
   .toolbar-group-inputs { grid-template-columns: 1fr; }
+  .toolbar-group-range-single { align-items: stretch; }
+  .date-range-picker { grid-template-columns: 1fr; }
+  .range-separator { display: none; }
   .equity-stats-grid { grid-template-columns: repeat(2, minmax(0,1fr)); }
   .modal-backdrop { padding: 16px; }
   .modal-shell { padding: 16px; border-radius: 20px; }

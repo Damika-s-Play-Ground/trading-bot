@@ -15,7 +15,7 @@ createApp({
       equityHover: null,
       equityRangeStart: '',
       equityRangeEnd: '',
-      equityRangePreset: 'all',
+      equityRangePreset: 'today',
       equityZoom: 1,
       pollHandle: null,
     };
@@ -46,13 +46,13 @@ createApp({
       return [...this.bots].sort((a, b) => Number(b.value || 0) - Number(a.value || 0));
     },
     filteredEquityPoints() {
-      const startTs = this.equityRangeStart ? new Date(this.equityRangeStart).getTime() : null;
-      const endTs = this.equityRangeEnd ? new Date(this.equityRangeEnd).getTime() : null;
+      const startTs = this.dateStartTimestamp(this.equityRangeStart);
+      const endTs = this.dateEndTimestamp(this.equityRangeEnd);
       return this.allEquityPoints.filter(point => {
         const ts = new Date(point.timestamp || point.label || '').getTime();
         if (!Number.isFinite(ts)) return true;
-        if (startTs && ts < startTs) return false;
-        if (endTs && ts > endTs) return false;
+        if (startTs != null && ts < startTs) return false;
+        if (endTs != null && ts > endTs) return false;
         return true;
       });
     },
@@ -180,15 +180,14 @@ createApp({
       if (!this.allEquityPoints.length) {
         this.equityRangeStart = '';
         this.equityRangeEnd = '';
-        this.equityRangePreset = 'all';
+        this.equityRangePreset = 'today';
         this.equityZoom = 1;
         return;
       }
-      const first = this.toDateTimeLocalValue(this.allEquityPoints[0]?.timestamp || this.allEquityPoints[0]?.label || '');
-      const last = this.toDateTimeLocalValue(this.allEquityPoints[this.allEquityPoints.length - 1]?.timestamp || this.allEquityPoints[this.allEquityPoints.length - 1]?.label || '');
-      if (!this.equityRangeStart) this.equityRangeStart = first;
-      if (!this.equityRangeEnd) this.equityRangeEnd = last;
-      if (!['24h', '7d', '30d', 'all', 'custom'].includes(this.equityRangePreset)) this.equityRangePreset = 'all';
+      const today = this.todayDateValue();
+      if (!this.equityRangeStart) this.equityRangeStart = today;
+      if (!this.equityRangeEnd) this.equityRangeEnd = today;
+      if (!['today', 'all', 'custom'].includes(this.equityRangePreset)) this.equityRangePreset = 'today';
     },
     async loadDashboard(options = {}) {
       const showLoading = options.showLoading ?? !this.payload;
@@ -271,6 +270,26 @@ createApp({
       const minute = pad(dt.getMinutes());
       return `${year}-${month}-${day}T${hour}:${minute}`;
     },
+    toDateValue(value) {
+      if (!value) return '';
+      const dt = new Date(value);
+      if (Number.isNaN(dt.getTime())) return '';
+      const pad = num => String(num).padStart(2, '0');
+      return `${dt.getFullYear()}-${pad(dt.getMonth() + 1)}-${pad(dt.getDate())}`;
+    },
+    todayDateValue() {
+      return this.toDateValue(new Date().toISOString());
+    },
+    dateStartTimestamp(value) {
+      if (!value) return null;
+      const ts = new Date(`${value}T00:00:00`).getTime();
+      return Number.isFinite(ts) ? ts : null;
+    },
+    dateEndTimestamp(value) {
+      if (!value) return null;
+      const ts = new Date(`${value}T23:59:59.999`).getTime();
+      return Number.isFinite(ts) ? ts : null;
+    },
     openBotModal(key) {
       this.activeBotKey = key;
       document.body.style.overflow = 'hidden';
@@ -299,25 +318,20 @@ createApp({
       this.equityRangePreset = preset;
       const points = this.allEquityPoints;
       if (!points.length) return;
-      const lastTs = new Date(points[points.length - 1].timestamp || points[points.length - 1].label || '').getTime();
-      const firstValue = this.toDateTimeLocalValue(points[0].timestamp || points[0].label || '');
-      const lastValue = this.toDateTimeLocalValue(points[points.length - 1].timestamp || points[points.length - 1].label || '');
       if (preset === 'all') {
-        this.equityRangeStart = firstValue;
-        this.equityRangeEnd = lastValue;
-      } else {
-        const hours = preset === '24h' ? 24 : preset === '7d' ? 24 * 7 : 24 * 30;
-        const start = new Date(lastTs - hours * 60 * 60 * 1000);
-        const startValue = this.toDateTimeLocalValue(start.toISOString());
-        this.equityRangeStart = startValue || firstValue;
-        this.equityRangeEnd = lastValue;
+        this.equityRangeStart = this.toDateValue(points[0].timestamp || points[0].label || '');
+        this.equityRangeEnd = this.toDateValue(points[points.length - 1].timestamp || points[points.length - 1].label || '');
+        return;
       }
+      const today = this.todayDateValue();
+      this.equityRangeStart = today;
+      this.equityRangeEnd = today;
     },
     onEquityRangeChange() {
       this.equityRangePreset = 'custom';
-      const startTs = this.equityRangeStart ? new Date(this.equityRangeStart).getTime() : null;
-      const endTs = this.equityRangeEnd ? new Date(this.equityRangeEnd).getTime() : null;
-      if (startTs && endTs && startTs > endTs) {
+      const startTs = this.dateStartTimestamp(this.equityRangeStart);
+      const endTs = this.dateEndTimestamp(this.equityRangeEnd);
+      if (startTs != null && endTs != null && startTs > endTs) {
         this.equityRangeEnd = this.equityRangeStart;
       }
     },
@@ -329,7 +343,7 @@ createApp({
     },
     resetEquityView() {
       this.equityZoom = 1;
-      this.setEquityPreset('all');
+      this.setEquityPreset('today');
     },
     equityHoverPoint(point) {
       this.equityHover = point;
@@ -498,21 +512,17 @@ createApp({
           </div>
 
           <div class="equity-toolbar">
-            <div class="toolbar-group">
-              <button class="mini-btn" :class="{ active: equityRangePreset === '24h' }" @click="setEquityPreset('24h')">24H</button>
-              <button class="mini-btn" :class="{ active: equityRangePreset === '7d' }" @click="setEquityPreset('7d')">7D</button>
-              <button class="mini-btn" :class="{ active: equityRangePreset === '30d' }" @click="setEquityPreset('30d')">30D</button>
-              <button class="mini-btn" :class="{ active: equityRangePreset === 'all' }" @click="setEquityPreset('all')">All</button>
-            </div>
-            <div class="toolbar-group toolbar-group-inputs">
-              <label class="input-stack">
-                <span>Start</span>
-                <input type="datetime-local" class="range-input" v-model="equityRangeStart" @change="onEquityRangeChange" />
+            <div class="toolbar-group toolbar-group-range-single">
+              <label class="input-stack input-stack-wide">
+                <span>Date range</span>
+                <div class="date-range-picker">
+                  <input type="date" class="range-input" v-model="equityRangeStart" @change="onEquityRangeChange" />
+                  <span class="range-separator">→</span>
+                  <input type="date" class="range-input" v-model="equityRangeEnd" @change="onEquityRangeChange" />
+                </div>
               </label>
-              <label class="input-stack">
-                <span>End</span>
-                <input type="datetime-local" class="range-input" v-model="equityRangeEnd" @change="onEquityRangeChange" />
-              </label>
+              <button class="mini-btn" :class="{ active: equityRangePreset === 'today' }" @click="setEquityPreset('today')">Today</button>
+              <button class="mini-btn" :class="{ active: equityRangePreset === 'all' }" @click="setEquityPreset('all')">All history</button>
             </div>
             <div class="toolbar-group">
               <button class="mini-btn" @click="zoomOutEquity">− Zoom out</button>

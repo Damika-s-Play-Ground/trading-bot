@@ -638,7 +638,7 @@ def _parse_summary_items(path: Path) -> list[dict[str, Any]]:
             if text.lower().startswith("job id:") or text.lower().startswith("schedule:") or text.lower().startswith("mode:"):
                 continue
             item_section = section
-            item_status = "done" if section == "done" else ("open" if section == "open" else "note")
+            item_status = "done" if section == "done" else "open"
             items.append(
                 {
                     "section": item_section,
@@ -662,6 +662,10 @@ def sync_todo_items(path: Path = SUMMARY_FILE) -> int:
         for item in items
     ]
     with _connect() as conn:
+        conn.execute(
+            "DELETE FROM todo_items WHERE source_file NOT IN (?, ?)",
+            (str(path), str(DB_PATH)),
+        )
         if item_keys:
             placeholders = ", ".join("?" for _ in item_keys)
             conn.execute(
@@ -849,7 +853,7 @@ def load_todo_state_overrides() -> dict[str, dict[str, Any]]:
 
 def save_todo_state(item_key: str, status: str, source: str = "dashboard") -> dict[str, Any]:
     ensure_schema()
-    normalized_status = status if status in {"open", "done", "note"} else "open"
+    normalized_status = status if status in {"open", "done"} else "open"
     updated_at = datetime.now(timezone.utc).isoformat()
     with _connect() as conn:
         conn.execute(
@@ -871,6 +875,58 @@ def save_todo_state(item_key: str, status: str, source: str = "dashboard") -> di
     }
 
 
+def create_todo_item(title: str, notes: str = "", source: str = "dashboard") -> dict[str, Any]:
+    ensure_schema()
+    cleaned_title = _normalize(title)
+    cleaned_notes = str(notes or "").strip()
+    if not cleaned_title:
+        raise ValueError("title is required")
+    created_at = datetime.now(timezone.utc).isoformat()
+    with _connect() as conn:
+        row = conn.execute("SELECT COALESCE(MAX(sort_order), -1) AS max_sort FROM todo_items").fetchone()
+        sort_order = int(row["max_sort"] if row and row["max_sort"] is not None else -1) + 1
+        item_key = _hash_key("custom", cleaned_title, created_at)
+        payload = {
+            "section": "custom",
+            "status": "open",
+            "sort_order": sort_order,
+            "text": cleaned_title,
+            "notes": cleaned_notes,
+            "source_file": str(DB_PATH),
+            "category": "other",
+            "is_custom": True,
+            "created_at": created_at,
+        }
+        conn.execute(
+            """
+            INSERT INTO todo_items (item_key, section, status, sort_order, text, notes, source_file, payload_json)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                item_key,
+                "custom",
+                "open",
+                sort_order,
+                cleaned_title,
+                cleaned_notes,
+                str(DB_PATH),
+                json.dumps(payload, ensure_ascii=False),
+            ),
+        )
+    return {
+        "item_key": item_key,
+        "section": "custom",
+        "status": "open",
+        "sort_order": sort_order,
+        "text": cleaned_title,
+        "notes": cleaned_notes,
+        "source_file": str(DB_PATH),
+        "payload": payload,
+        "created_at": created_at,
+        "source": source,
+    }
+
+
 def load_todo_items() -> list[dict[str, Any]]:
     ensure_schema()
     overrides = load_todo_state_overrides()
@@ -885,14 +941,19 @@ def load_todo_items() -> list[dict[str, Any]]:
     items = []
     for row in rows:
         item = dict(row)
-        item["base_status"] = item.get("status", "open")
+        base_status = str(item.get("status", "open") or "open")
+        if base_status == "note":
+            base_status = "open"
+        item["base_status"] = base_status
+        item["status"] = base_status
         try:
             item["payload"] = json.loads(item.pop("payload_json"))
         except Exception:
             item["payload"] = {}
         override = overrides.get(str(item.get("item_key")))
         if override and item["base_status"] != "done":
-            item["status"] = override.get("status", item["status"])
+            override_status = str(override.get("status", item["status"]))
+            item["status"] = override_status if override_status in {"open", "done"} else "open"
             item["status_updated_at"] = override.get("updated_at", "")
             item["status_source"] = override.get("source", "dashboard")
         items.append(item)
@@ -904,7 +965,6 @@ def todo_stats(items: Iterable[dict[str, Any]]) -> dict[str, Any]:
     total = len(items)
     done = sum(1 for item in items if item.get("status") == "done")
     open_count = sum(1 for item in items if item.get("status") == "open")
-    notes = total - done - open_count
     categories: dict[str, int] = {}
     for item in items:
         payload = item.get("payload", {}) if isinstance(item.get("payload"), dict) else {}
@@ -914,7 +974,7 @@ def todo_stats(items: Iterable[dict[str, Any]]) -> dict[str, Any]:
         "total": total,
         "done": done,
         "open": open_count,
-        "notes": notes,
+        "notes": 0,
         "categories": categories,
         "completion_pct": round(done / total * 100, 1) if total else 0.0,
     }

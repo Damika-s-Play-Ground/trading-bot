@@ -1,5 +1,5 @@
 #!/Users/damikaanupama/trading-bot/venv/bin/python3.13
-"""Interactive roadmap / TODO dashboard generated from the SQLite dashboard store."""
+"""Timeline-style roadmap / TODO dashboard backed by the SQLite dashboard store."""
 from __future__ import annotations
 
 import json
@@ -8,29 +8,20 @@ from pathlib import Path
 from typing import Any
 
 from trading_bot.dashboards.data_store import load_todo_items, sync_all_if_needed, todo_stats
-from trading_bot.dashboards.shared_ui import build_bar_chart
 from trading_bot.dashboards.spot_dashboard import build_shared_style, nav
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 OUTPUT = REPO_ROOT / "todo.html"
 
-CATEGORY_COPY = {
-    "research": "This stage improves signal quality, ranking confidence, and idea selection before capital gets reassigned.",
-    "ops": "This stage hardens the runtime so the system behaves predictably across cron runs, restarts, and production incidents.",
-    "risk": "This stage adds explicit safety rails so promotion and capital changes stay constrained by measurable checks.",
-    "architecture": "This stage improves the plumbing behind the dashboard and manager so features stay durable instead of becoming one-off hacks.",
-    "product": "This stage improves operator usability so decisions are faster, clearer, and easier to audit from the dashboard surface.",
-    "done": "This roadmap stage is already completed and now acts as baseline capability for the next phase.",
-    "other": "This roadmap stage supports the broader project path and should be reviewed in the context of nearby stages.",
+STATUS_COPY = {
+    "open": "Treat this as upcoming work. Execute the smallest safe next step after checking dependencies and current runtime state.",
+    "done": "This item is already complete. Re-open it only if the implementation has drifted or the roadmap summary is stale.",
 }
 
-NEXT_ACTION_COPY = {
-    "open": "Treat this as upcoming work. Review the dependent outputs and implement the smallest production-safe next step.",
-    "done": "No action needed unless the implementation has drifted and the summary needs to be revalidated.",
-    "note": "Use this as live operating context rather than a build task. It should inform prioritization, not be toggled like feature work.",
+SOURCE_COPY = {
+    "roadmap_summary.yml": "Synced from the roadmap summary file.",
+    "dashboard.sqlite": "User-added todo stored directly in the dashboard database.",
 }
-
-CATEGORY_ORDER = ["research", "ops", "risk", "architecture", "product", "other", "done"]
 
 
 def _escape(text: Any) -> str:
@@ -43,729 +34,569 @@ def _escape(text: Any) -> str:
     )
 
 
-
 def _status_label(status: str) -> str:
-    return {
-        "done": "Completed",
-        "open": "Upcoming",
-        "note": "Live note",
-    }.get(status, status.title())
-
-
-
-def _category_chart(items: list[dict[str, Any]]) -> str:
-    open_items = [item for item in items if item.get("status") == "open"]
-    counts: dict[str, int] = {}
-    for item in open_items:
-        category = ((item.get("payload") or {}) if isinstance(item.get("payload"), dict) else {}).get("category", "other")
-        counts[category] = counts.get(category, 0) + 1
-    palette = {
-        "research": "#60a5fa",
-        "ops": "#22c55e",
-        "risk": "#f59e0b",
-        "architecture": "#a855f7",
-        "product": "#38bdf8",
-        "other": "#94a3b8",
-        "done": "#64748b",
-    }
-    rows = [
-        {
-            "label": category.title(),
-            "value": counts[category],
-            "color": palette.get(category, "#3b82f6"),
-            "meta": f"{counts[category]} upcoming",
-        }
-        for category in CATEGORY_ORDER
-        if counts.get(category)
-    ]
-    return build_bar_chart(rows, title="Upcoming work by theme", subtitle="What the remaining roadmap is concentrated on", value_suffix="")
-
+    return {"done": "Completed", "open": "Upcoming"}.get(status, status.title())
 
 
 def _detail_text(item: dict[str, Any]) -> str:
-    payload = item.get("payload", {}) if isinstance(item.get("payload"), dict) else {}
-    category = payload.get("category", "other")
-    status = item.get("status", "open")
-    text = str(item.get("text", "")).strip()
-    stage = int(item.get("sort_order", 0)) + 1
-    base = CATEGORY_COPY.get(category, CATEGORY_COPY["other"])
-    next_step = NEXT_ACTION_COPY.get(status, NEXT_ACTION_COPY["open"])
-    return f"Stage #{stage}: {text} {base} {next_step}"
+    status = str(item.get("status") or "open")
+    notes = str(item.get("notes") or "").strip()
+    source_name = Path(str(item.get("source_file") or "dashboard.sqlite")).name or "dashboard.sqlite"
+    source_copy = SOURCE_COPY.get(source_name, "Stored in the dashboard data store.")
+    parts = [f"Stage #{int(item.get('sort_order', 0)) + 1}", source_copy, STATUS_COPY.get(status, STATUS_COPY["open"])]
+    if notes:
+        parts.insert(1, notes)
+    return " ".join(part for part in parts if part)
 
 
-
-def _todo_payload(items: list[dict[str, Any]]) -> dict[str, Any]:
-    stats = todo_stats(items)
-    ordered_items: list[dict[str, Any]] = []
-    for item in items:
-        payload = item.get("payload", {}) if isinstance(item.get("payload"), dict) else {}
-        category = payload.get("category", "other")
-        source_name = Path(str(item.get("source_file") or "")).name or "dashboard.sqlite"
-        stage_number = int(item.get("sort_order", 0)) + 1
-        ordered_items.append(
-            {
-                "item_key": str(item.get("item_key", "")),
-                "stage_number": stage_number,
-                "sort_order": int(item.get("sort_order", 0)),
-                "text": str(item.get("text", "")).strip(),
-                "notes": str(item.get("notes", "") or "").strip(),
-                "status": str(item.get("status", "open")),
-                "base_status": str(item.get("base_status", item.get("status", "open"))),
-                "section": str(item.get("section", "")),
-                "category": category,
-                "source_file": source_name,
-                "detail": _detail_text(item),
-                "status_label": _status_label(str(item.get("status", "open"))),
-                "can_toggle": str(item.get("base_status", item.get("status", "open"))) == "open",
-            }
-        )
+def _payload_item(item: dict[str, Any]) -> dict[str, Any]:
+    status = str(item.get("status") or "open")
+    sort_order = int(item.get("sort_order", 0))
+    source_name = Path(str(item.get("source_file") or "dashboard.sqlite")).name or "dashboard.sqlite"
     return {
-        "generated_at": datetime.now(timezone.utc).isoformat(),
-        "stats": stats,
-        "items": ordered_items,
+        "item_key": str(item.get("item_key", "")),
+        "stage_number": sort_order + 1,
+        "sort_order": sort_order,
+        "text": str(item.get("text", "")).strip(),
+        "notes": str(item.get("notes", "") or "").strip(),
+        "status": status,
+        "base_status": str(item.get("base_status", status)),
+        "status_label": _status_label(status),
+        "can_toggle": str(item.get("base_status", status)) == "open",
+        "detail": _detail_text(item),
+        "source_file": source_name,
+        "is_custom": bool(((item.get("payload") or {}) if isinstance(item.get("payload"), dict) else {}).get("is_custom")),
     }
 
 
-
-def build_todo_page() -> None:
-    sync_all_if_needed(min_interval=5.0)
-    items = load_todo_items()
-    payload = _todo_payload(items)
-    stats = payload["stats"]
-    open_items = [item for item in payload["items"] if item["status"] == "open"]
-    focus = open_items[0] if open_items else None
-    focus_text = focus["text"] if focus else "Nothing queued — the current roadmap is clear."
-    focus_badge = f"Stage #{focus['stage_number']} is next" if focus else "All clear"
-    categories_html = _category_chart(items)
-    initial_json = json.dumps(payload, ensure_ascii=False).replace("</", "<\\/")
-
-    done = int(stats.get("done", 0))
-    open_count = int(stats.get("open", 0))
-    notes = int(stats.get("notes", 0))
-    total = int(stats.get("total", 0))
-    pct = float(stats.get("completion_pct", 0.0))
-
-    html = f"""<!DOCTYPE html>
-<html lang="en">
+def build_page(items: list[dict[str, Any]], stats: dict[str, Any]) -> str:
+    payload_items = [_payload_item(item) for item in items]
+    bootstrap = json.dumps(
+        {
+            "generated_at": datetime.now(timezone.utc).isoformat(),
+            "stats": stats,
+            "items": payload_items,
+        },
+        ensure_ascii=False,
+    )
+    generated_label = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    return f"""<!DOCTYPE html>
+<html lang=\"en\">
 <head>
-    <meta charset="UTF-8">
-    <meta http-equiv="refresh" content="120">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Project Roadmap / TODO</title>
-    <style>
-        {build_shared_style('#22c55e')}
-        .hero {{ display:grid; grid-template-columns:1.25fr .95fr; gap:16px; margin-bottom:18px; align-items:stretch; }}
-        .hero-card, .surface-card, .timeline-shell {{ background:#1e293b; border:1px solid #334155; border-radius:18px; padding:18px; box-shadow:0 12px 30px rgba(15,23,42,.24); }}
-        .hero-card h2 {{ font-size:26px; margin-bottom:6px; }}
-        .hero-card p {{ color:#94a3b8; line-height:1.68; }}
-        .focus-box {{ margin-top:14px; padding:16px 18px; background:#0f172a; border:1px solid #334155; border-radius:16px; }}
-        .focus-label {{ color:#94a3b8; font-size:11px; text-transform:uppercase; letter-spacing:.7px; margin-bottom:6px; }}
-        .focus-text {{ font-size:14px; line-height:1.7; color:#e2e8f0; }}
-        .legend {{ display:flex; gap:8px; flex-wrap:wrap; margin-top:12px; }}
-        .legend-pill {{ padding:6px 10px; border-radius:999px; background:#0f172a; border:1px solid #334155; color:#94a3b8; font-size:11px; }}
-        .stats-grid {{ display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:14px; margin:18px 0; }}
-        .stat-card {{ background:#1e293b; border-radius:14px; padding:16px 18px; border:1px solid #334155; }}
-        .stat-card .label {{ color:#94a3b8; font-size:11px; text-transform:uppercase; letter-spacing:.6px; }}
-        .stat-card .value {{ font-size:28px; font-weight:800; margin-top:4px; font-variant-numeric:tabular-nums; }}
-        .stat-card .sub {{ color:#64748b; font-size:12px; margin-top:4px; }}
-        .progress-meta-card {{ display:flex; flex-direction:column; gap:14px; }}
-        .progress-card {{ display:flex; flex-direction:column; gap:16px; height:100%; }}
-        .progress-card-head {{ display:flex; justify-content:space-between; gap:10px; align-items:flex-start; flex-wrap:wrap; }}
-        .progress-card-head strong {{ font-size:14px; }}
-        .progress-note {{ color:#94a3b8; font-size:12px; line-height:1.55; max-width:300px; }}
-        .progress-donut-shell {{ display:grid; grid-template-columns:minmax(0, 220px) minmax(0, 1fr); gap:18px; align-items:center; }}
-        .progress-donut {{ width:220px; height:220px; padding:18px; display:grid; place-items:center; position:relative; margin:0 auto; }}
-        .progress-donut::after {{ content:''; position:absolute; inset:34px; border-radius:50%; background:#0f172a; box-shadow:inset 0 0 0 1px #334155; }}
-        .progress-svg {{ width:220px; height:220px; overflow:visible; display:block; }}
-        .progress-arc {{ fill:none; stroke-width:18; stroke-linecap:butt; transform:rotate(-90deg); transform-origin:50% 50%; transition:stroke-dasharray .28s ease, stroke-dashoffset .28s ease; }}
-        .progress-center {{ position:absolute; inset:0; display:grid; place-items:center; z-index:1; text-align:center; pointer-events:none; }}
-        .progress-center strong {{ display:block; font-size:24px; line-height:1.1; color:#e2e8f0; }}
-        .progress-center span {{ display:block; margin-top:4px; color:#94a3b8; font-size:11px; text-transform:uppercase; letter-spacing:.7px; }}
-        .progress-legend {{ display:flex; flex-direction:column; gap:10px; }}
-        .progress-row {{ display:grid; grid-template-columns:14px 1fr auto; gap:10px; align-items:center; padding:10px 12px; border-radius:14px; background:#0f172a; border:1px solid #334155; }}
-        .progress-row .dot {{ width:14px; height:14px; border-radius:999px; display:inline-block; }}
-        .progress-row .meta {{ display:flex; gap:10px; align-items:baseline; color:#94a3b8; font-size:12px; }}
-        .progress-row .meta strong {{ color:#e2e8f0; font-size:14px; }}
-        .progress-bar-wrap {{ background:#1e293b; border:1px solid #334155; border-radius:16px; padding:16px 18px; margin-bottom:18px; }}
-        .progress-head {{ display:flex; justify-content:space-between; gap:12px; flex-wrap:wrap; align-items:center; margin-bottom:10px; }}
-        .progress-head strong {{ font-size:14px; }}
-        .progress-head .mini-note {{ font-size:12px; color:#94a3b8; }}
-        .progress-track {{ height:10px; background:#0f172a; border-radius:999px; overflow:hidden; box-shadow:inset 0 0 0 1px #334155; }}
-        .progress-fill {{ height:100%; width:{pct:.1f}%; background:linear-gradient(90deg,#22c55e,#60a5fa); border-radius:999px; transition:width .28s ease; }}
-        .insight-grid {{ display:grid; grid-template-columns:1.15fr .85fr; gap:16px; margin-bottom:18px; align-items:stretch; }}
-        .chart-card .chart-head {{ align-items:flex-start; }}
-        .surface-card h3 {{ margin:0 0 8px; font-size:15px; }}
-        .surface-card p {{ margin:0; color:#94a3b8; line-height:1.7; font-size:13px; }}
-        .surface-list {{ display:grid; gap:10px; margin-top:12px; }}
-        .surface-list-item {{ padding:12px 14px; background:#0f172a; border:1px solid #334155; border-radius:14px; color:#cbd5e1; font-size:13px; line-height:1.65; }}
-        .timeline-shell {{ margin-bottom:18px; }}
-        .toolbar {{ display:flex; justify-content:space-between; gap:12px; flex-wrap:wrap; align-items:center; margin-bottom:14px; }}
-        .toolbar-left {{ display:flex; gap:10px; flex-wrap:wrap; align-items:center; }}
-        .search-input {{ width:min(380px,100%); background:#0f172a; border:1px solid #334155; color:#e2e8f0; padding:11px 12px; border-radius:12px; font-size:13px; outline:none; }}
-        .search-input:focus {{ border-color:#22c55e; box-shadow:0 0 0 3px rgba(34,197,94,.14); }}
-        .chip-row {{ display:flex; flex-wrap:wrap; gap:8px; }}
-        .chip {{ padding:8px 12px; border-radius:999px; background:#0f172a; border:1px solid #334155; color:#cbd5e1; font-size:12px; cursor:pointer; user-select:none; }}
-        .chip.active {{ background:#22c55e22; border-color:#22c55e55; color:#86efac; }}
-        .chip:hover {{ border-color:#475569; }}
-        .timeline {{ position:relative; display:grid; gap:16px; }}
-        .timeline::before {{ content:''; position:absolute; top:4px; bottom:4px; left:26px; width:2px; background:linear-gradient(180deg,#22c55e55,#334155); border-radius:999px; }}
-        .timeline-group {{ display:grid; gap:12px; }}
-        .timeline-group-head {{ display:flex; justify-content:space-between; gap:10px; align-items:center; padding-left:54px; margin-top:4px; }}
-        .timeline-group-head strong {{ font-size:14px; }}
-        .timeline-group-head span {{ color:#94a3b8; font-size:12px; }}
-        .timeline-item {{ position:relative; width:100%; text-align:left; border:none; cursor:pointer; background:transparent; padding:0 0 0 54px; }}
-        .timeline-item[data-priority="true"] .timeline-card {{ border-color:#22c55e66; box-shadow:0 0 0 1px rgba(34,197,94,.16), 0 14px 28px rgba(15,23,42,.16); background:#102019; }}
-        .timeline-item:focus-visible .timeline-card {{ outline:2px solid #60a5fa; outline-offset:2px; }}
-        .timeline-marker {{ position:absolute; left:16px; top:18px; width:20px; height:20px; border-radius:999px; border:3px solid #0f172a; box-shadow:0 0 0 1px #334155; background:#60a5fa; z-index:1; }}
-        .timeline-item[data-status="done"] .timeline-marker {{ background:#22c55e; }}
-        .timeline-item[data-status="note"] .timeline-marker {{ background:#94a3b8; }}
-        .timeline-card {{ background:#0f172a; border:1px solid #334155; border-radius:18px; padding:14px 16px; transition:transform .15s ease, border-color .15s ease, background .15s ease, opacity .15s ease; }}
-        .timeline-item:hover .timeline-card {{ transform:translateY(-1px); border-color:#475569; background:#101b31; }}
-        .timeline-item[data-status="done"] .timeline-card {{ opacity:.78; }}
-        .timeline-head {{ display:flex; justify-content:space-between; gap:10px; align-items:flex-start; margin-bottom:10px; }}
-        .timeline-head-right {{ display:flex; flex-direction:column; gap:8px; align-items:flex-end; }}
-        .timeline-title-wrap {{ display:flex; flex-wrap:wrap; gap:8px; align-items:center; }}
-        .timeline-stage {{ display:inline-flex; align-items:center; justify-content:center; min-width:44px; height:26px; padding:0 10px; border-radius:999px; background:#22c55e22; color:#86efac; font-weight:800; font-size:11px; }}
-        .timeline-pill {{ font-size:11px; padding:4px 9px; border-radius:999px; border:1px solid #334155; color:#cbd5e1; background:#111827; }}
-        .timeline-pill.status-open {{ color:#93c5fd; background:#3b82f61a; border-color:#3b82f644; }}
-        .timeline-pill.status-done {{ color:#86efac; background:#22c55e1a; border-color:#22c55e44; }}
-        .timeline-pill.status-note {{ color:#cbd5e1; background:#334155; border-color:#475569; }}
-        .timeline-text {{ color:#e2e8f0; font-size:14px; line-height:1.7; margin-bottom:10px; }}
-        .timeline-sub {{ color:#94a3b8; font-size:12px; line-height:1.6; margin-bottom:12px; }}
-        .timeline-meta {{ display:flex; gap:10px 14px; flex-wrap:wrap; color:#64748b; font-size:11px; }}
-        .timeline-hint {{ color:#94a3b8; font-size:11px; line-height:1.4; }}
-        .empty-state {{ text-align:center; color:#64748b; padding:28px 14px; font-size:13px; background:#0f172a; border:1px dashed #334155; border-radius:16px; }}
-        .modal-backdrop {{ position:fixed; inset:0; background:rgba(2,6,23,.72); backdrop-filter:blur(8px); display:none; align-items:center; justify-content:center; padding:18px; z-index:9999; }}
-        .modal-backdrop.open {{ display:flex; }}
-        .modal-card {{ width:min(760px, 100%); max-height:min(86vh, 860px); overflow:auto; background:#0f172a; border:1px solid #334155; border-radius:24px; box-shadow:0 24px 80px rgba(2,6,23,.55); padding:20px; }}
-        .modal-head {{ display:flex; justify-content:space-between; gap:14px; align-items:flex-start; margin-bottom:16px; }}
-        .modal-head h3 {{ margin:0; font-size:22px; line-height:1.25; }}
-        .modal-close {{ border:none; background:#111827; color:#cbd5e1; width:38px; height:38px; border-radius:999px; cursor:pointer; font-size:18px; border:1px solid #334155; }}
-        .modal-close:hover {{ border-color:#475569; }}
-        .modal-pills {{ display:flex; gap:8px; flex-wrap:wrap; margin-top:10px; }}
-        .modal-body {{ display:grid; gap:16px; }}
-        .modal-panel {{ background:#111827; border:1px solid #1f2937; border-radius:18px; padding:16px; }}
-        .modal-panel h4 {{ margin:0 0 8px; font-size:13px; color:#e2e8f0; }}
-        .modal-panel p {{ margin:0; color:#cbd5e1; line-height:1.72; font-size:14px; }}
-        .modal-grid {{ display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:12px; }}
-        .modal-kv {{ background:#0b1220; border:1px solid #1f2937; border-radius:14px; padding:12px; }}
-        .modal-kv .k {{ color:#64748b; font-size:11px; text-transform:uppercase; letter-spacing:.6px; }}
-        .modal-kv .v {{ color:#e2e8f0; font-size:14px; margin-top:6px; line-height:1.45; }}
-        .modal-actions {{ display:flex; justify-content:space-between; gap:12px; flex-wrap:wrap; align-items:center; padding-top:4px; }}
-        .action-btn {{ border:none; border-radius:12px; padding:11px 14px; cursor:pointer; font-size:13px; font-weight:700; }}
-        .action-primary {{ background:#22c55e; color:#052e16; }}
-        .action-secondary {{ background:#111827; color:#cbd5e1; border:1px solid #334155; }}
-        .modal-footnote {{ color:#64748b; font-size:12px; }}
-        @media (max-width: 980px) {{
-            .hero, .insight-grid, .progress-donut-shell {{ grid-template-columns:1fr; }}
-            .progress-note {{ max-width:none; }}
-        }}
-        @media (max-width: 640px) {{
-            .nav a {{ width:100%; text-align:center; }}
-            .search-input {{ width:100%; }}
-            .timeline-item {{ padding-left:46px; }}
-            .timeline-group-head {{ padding-left:46px; }}
-            .timeline::before {{ left:22px; }}
-            .timeline-marker {{ left:12px; }}
-            .modal-card {{ padding:16px; border-radius:20px; }}
-            .progress-donut, .progress-svg {{ width:200px; height:200px; }}
-        }}
-    </style>
-    <script>
-    const INITIAL_TODO_DATA = {initial_json};
-    const CATEGORY_ORDER = {json.dumps(CATEGORY_ORDER)};
-    const STATUS_ORDER = {{ open: 0, note: 1, done: 2 }};
+  <meta charset=\"UTF-8\" />
+  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\" />
+  <title>Trading Bot Roadmap</title>
+  {build_shared_style()}
+  <style>
+    .todo-shell {{ display:grid; gap:18px; }}
+    .hero-card, .stats-card, .composer-card, .timeline-card, .modal-card {{ background:linear-gradient(180deg, rgba(15,23,42,.96), rgba(2,6,23,.96)); border:1px solid rgba(148,163,184,.18); border-radius:22px; box-shadow:0 22px 48px rgba(2,6,23,.35); }}
+    .hero-card {{ padding:24px; display:grid; grid-template-columns:minmax(0, 1.4fr) minmax(260px, .9fr); gap:20px; align-items:center; }}
+    .eyebrow {{ color:#38bdf8; font-size:12px; font-weight:700; letter-spacing:.14em; text-transform:uppercase; margin-bottom:8px; }}
+    .hero-title {{ margin:0; font-size:34px; line-height:1.05; }}
+    .hero-copy {{ margin:12px 0 0; color:#cbd5e1; font-size:15px; line-height:1.7; max-width:760px; }}
+    .hero-meta {{ display:flex; flex-wrap:wrap; gap:10px; margin-top:16px; }}
+    .hero-chip {{ border:1px solid rgba(96,165,250,.28); background:rgba(15,23,42,.75); color:#dbeafe; border-radius:999px; padding:8px 12px; font-size:12px; }}
+    .progress-panel {{ display:grid; gap:14px; justify-items:center; }}
+    .progress-ring {{ position:relative; width:220px; height:220px; border-radius:50%; background:conic-gradient(#22c55e 0deg, #22c55e var(--done-angle), rgba(59,130,246,.92) var(--done-angle), rgba(59,130,246,.92) 360deg); box-shadow:inset 0 0 0 1px rgba(148,163,184,.12), 0 18px 40px rgba(15,23,42,.42); }}
+    .progress-ring::after {{ content:''; position:absolute; inset:22px; border-radius:50%; background:linear-gradient(180deg, rgba(15,23,42,.98), rgba(2,6,23,.98)); box-shadow:inset 0 0 0 1px rgba(148,163,184,.12); }}
+    .progress-center {{ position:absolute; inset:0; z-index:1; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; padding:22px; }}
+    .progress-value {{ font-size:40px; font-weight:800; line-height:1; color:#f8fafc; }}
+    .progress-caption {{ margin-top:8px; color:#94a3b8; font-size:12px; text-transform:uppercase; letter-spacing:.12em; }}
+    .progress-summary {{ color:#cbd5e1; font-size:13px; text-align:center; max-width:220px; line-height:1.6; }}
+    .stats-card {{ padding:18px; display:grid; grid-template-columns:repeat(3, minmax(0,1fr)); gap:12px; }}
+    .stat-block {{ border:1px solid rgba(148,163,184,.12); border-radius:18px; padding:16px; background:rgba(15,23,42,.72); }}
+    .stat-label {{ color:#94a3b8; font-size:12px; text-transform:uppercase; letter-spacing:.12em; }}
+    .stat-value {{ margin-top:10px; font-size:28px; font-weight:800; color:#f8fafc; }}
+    .stat-sub {{ margin-top:6px; color:#cbd5e1; font-size:13px; }}
+    .composer-card {{ padding:18px; display:grid; gap:14px; }}
+    .composer-head {{ display:flex; justify-content:space-between; gap:14px; align-items:end; flex-wrap:wrap; }}
+    .card-title {{ margin:0; font-size:20px; }}
+    .card-copy {{ margin:6px 0 0; color:#94a3b8; font-size:13px; line-height:1.6; }}
+    .composer-grid {{ display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1.2fr) auto; gap:12px; align-items:end; }}
+    .field {{ display:grid; gap:8px; }}
+    .field label {{ color:#94a3b8; font-size:11px; text-transform:uppercase; letter-spacing:.14em; }}
+    .field input, .field textarea {{ width:100%; border:1px solid rgba(71,85,105,.6); background:rgba(15,23,42,.88); color:#e2e8f0; border-radius:14px; padding:12px 14px; font:inherit; resize:vertical; }}
+    .field input:focus, .field textarea:focus {{ outline:none; border-color:rgba(96,165,250,.8); box-shadow:0 0 0 3px rgba(59,130,246,.18); }}
+    .composer-actions {{ display:flex; gap:10px; align-items:center; }}
+    .btn-primary, .btn-ghost, .toggle-btn {{ border:1px solid rgba(96,165,250,.22); border-radius:14px; font:inherit; cursor:pointer; transition:transform .18s ease, background .18s ease, border-color .18s ease; }}
+    .btn-primary {{ background:linear-gradient(135deg, #2563eb, #38bdf8); color:white; padding:12px 16px; font-weight:700; min-height:48px; }}
+    .btn-ghost, .toggle-btn {{ background:rgba(15,23,42,.72); color:#dbeafe; padding:10px 14px; }}
+    .btn-primary:hover, .btn-ghost:hover, .toggle-btn:hover {{ transform:translateY(-1px); border-color:rgba(125,211,252,.45); }}
+    .btn-primary:disabled {{ opacity:.6; cursor:progress; transform:none; }}
+    .composer-status {{ color:#93c5fd; font-size:13px; min-height:20px; }}
+    .toolbar {{ display:flex; flex-wrap:wrap; justify-content:space-between; gap:12px; align-items:center; margin-bottom:14px; }}
+    .toolbar-left {{ display:flex; flex-wrap:wrap; gap:10px; align-items:center; }}
+    .search-input {{ min-width:240px; border:1px solid rgba(71,85,105,.6); background:rgba(15,23,42,.88); color:#e2e8f0; border-radius:14px; padding:11px 14px; font:inherit; }}
+    .search-input:focus {{ outline:none; border-color:rgba(96,165,250,.8); box-shadow:0 0 0 3px rgba(59,130,246,.18); }}
+    .filter-pills {{ display:flex; gap:8px; flex-wrap:wrap; }}
+    .filter-pill {{ border:1px solid rgba(71,85,105,.5); background:rgba(15,23,42,.74); color:#cbd5e1; border-radius:999px; padding:9px 12px; cursor:pointer; font:inherit; font-size:12px; }}
+    .filter-pill.active {{ color:#eff6ff; border-color:rgba(96,165,250,.55); background:rgba(37,99,235,.18); }}
+    .timeline-card {{ padding:18px; }}
+    .timeline-section + .timeline-section {{ margin-top:22px; padding-top:22px; border-top:1px solid rgba(148,163,184,.12); }}
+    .section-head {{ display:flex; justify-content:space-between; gap:12px; align-items:center; margin-bottom:16px; }}
+    .section-title {{ margin:0; font-size:18px; }}
+    .section-count {{ color:#94a3b8; font-size:12px; text-transform:uppercase; letter-spacing:.12em; }}
+    .timeline-list {{ position:relative; display:grid; gap:14px; }}
+    .timeline-list::before {{ content:''; position:absolute; left:18px; top:8px; bottom:8px; width:2px; background:linear-gradient(180deg, rgba(56,189,248,.38), rgba(34,197,94,.18)); }}
+    .timeline-item {{ position:relative; display:grid; grid-template-columns:auto minmax(0,1fr) auto; gap:14px; align-items:start; padding:16px 16px 16px 0; border:1px solid rgba(148,163,184,.12); border-radius:18px; background:rgba(15,23,42,.68); cursor:pointer; transition:transform .18s ease, border-color .18s ease, background .18s ease; }}
+    .timeline-item:hover {{ transform:translateY(-1px); border-color:rgba(96,165,250,.3); background:rgba(15,23,42,.8); }}
+    .timeline-dot-wrap {{ position:relative; width:38px; display:flex; justify-content:center; padding-top:4px; }}
+    .timeline-dot {{ width:16px; height:16px; border-radius:50%; border:3px solid rgba(15,23,42,.95); box-shadow:0 0 0 4px rgba(59,130,246,.16); background:#3b82f6; z-index:1; }}
+    .timeline-dot.done {{ background:#22c55e; box-shadow:0 0 0 4px rgba(34,197,94,.16); }}
+    .item-main {{ display:grid; gap:8px; min-width:0; }}
+    .item-meta {{ display:flex; flex-wrap:wrap; gap:8px; align-items:center; }}
+    .stage-chip, .status-chip, .source-chip {{ border-radius:999px; padding:6px 10px; font-size:11px; text-transform:uppercase; letter-spacing:.12em; }}
+    .stage-chip {{ background:rgba(59,130,246,.15); color:#bfdbfe; border:1px solid rgba(96,165,250,.24); }}
+    .status-chip.upcoming {{ background:rgba(59,130,246,.12); color:#dbeafe; border:1px solid rgba(96,165,250,.2); }}
+    .status-chip.completed {{ background:rgba(34,197,94,.12); color:#bbf7d0; border:1px solid rgba(34,197,94,.24); }}
+    .source-chip {{ background:rgba(148,163,184,.1); color:#cbd5e1; border:1px solid rgba(148,163,184,.18); }}
+    .item-title {{ margin:0; font-size:17px; color:#f8fafc; line-height:1.45; }}
+    .item-notes {{ margin:0; color:#94a3b8; font-size:14px; line-height:1.65; }}
+    .item-actions {{ display:flex; flex-direction:column; gap:10px; align-items:end; min-width:130px; }}
+    .toggle-btn.done {{ color:#bbf7d0; border-color:rgba(34,197,94,.24); }}
+    .toggle-btn.reset {{ color:#dbeafe; border-color:rgba(96,165,250,.24); }}
+    .empty-state {{ border:1px dashed rgba(148,163,184,.25); border-radius:18px; padding:18px; color:#94a3b8; text-align:center; }}
+    .modal-backdrop {{ position:fixed; inset:0; background:rgba(2,6,23,.72); backdrop-filter:blur(8px); display:none; align-items:center; justify-content:center; padding:20px; z-index:90; }}
+    .modal-backdrop.open {{ display:flex; }}
+    .modal-card {{ width:min(760px, 100%); padding:22px; max-height:min(88vh, 920px); overflow:auto; }}
+    .modal-head {{ display:flex; justify-content:space-between; gap:16px; align-items:start; }}
+    .modal-close {{ border:none; background:transparent; color:#94a3b8; font-size:26px; cursor:pointer; line-height:1; padding:0; }}
+    .modal-title {{ margin:10px 0 0; font-size:24px; line-height:1.3; }}
+    .modal-grid {{ display:grid; grid-template-columns:repeat(3, minmax(0,1fr)); gap:12px; margin:18px 0; }}
+    .modal-stat {{ border:1px solid rgba(148,163,184,.12); border-radius:16px; padding:12px; background:rgba(15,23,42,.72); }}
+    .modal-label {{ color:#94a3b8; font-size:11px; text-transform:uppercase; letter-spacing:.12em; }}
+    .modal-value {{ margin-top:8px; color:#f8fafc; font-size:16px; line-height:1.5; }}
+    .modal-body {{ display:grid; gap:14px; color:#cbd5e1; font-size:15px; line-height:1.75; }}
+    .modal-panel {{ border:1px solid rgba(148,163,184,.12); border-radius:18px; padding:14px; background:rgba(15,23,42,.68); }}
+    .modal-panel h4 {{ margin:0 0 8px; font-size:13px; color:#94a3b8; text-transform:uppercase; letter-spacing:.12em; }}
+    .modal-panel p {{ margin:0; white-space:pre-wrap; }}
+    @media (max-width: 980px) {{
+      .hero-card {{ grid-template-columns:1fr; }}
+      .composer-grid {{ grid-template-columns:1fr; }}
+      .timeline-item {{ grid-template-columns:auto minmax(0,1fr); }}
+      .item-actions {{ grid-column:2; align-items:start; flex-direction:row; flex-wrap:wrap; }}
+      .modal-grid {{ grid-template-columns:1fr; }}
+    }}
+    @media (max-width: 720px) {{
+      body {{ padding:14px; }}
+      .hero-title {{ font-size:28px; }}
+      .stats-card {{ grid-template-columns:1fr; }}
+      .toolbar {{ align-items:stretch; }}
+      .toolbar-left {{ width:100%; }}
+      .search-input {{ width:100%; min-width:0; }}
+      .timeline-list::before {{ left:15px; }}
+      .timeline-item {{ padding-right:12px; }}
+    }}
+  </style>
+</head>
+<body>
+  {nav('todo')}
+  <div class="todo-shell">
+    <section class="hero-card">
+      <div>
+        <div class="eyebrow">Roadmap timeline</div>
+        <h1 class="hero-title">Trading bot TODOs, now ordered for execution</h1>
+        <p class="hero-copy">
+          Upcoming work stays at the top in roadmap order, completed work falls below it, and every item opens a detail modal so you can inspect context before acting.
+          New TODOs are stored in the dashboard database instead of being hardcoded into the page.
+        </p>
+        <div class="hero-meta">
+          <span class="hero-chip">Generated {generated_label}</span>
+          <span class="hero-chip">DB-backed roadmap</span>
+          <span class="hero-chip">Timeline + modal drill-down</span>
+        </div>
+      </div>
+      <div class="progress-panel">
+        <div class="progress-ring" id="progress-ring" style="--done-angle: 0deg;">
+          <div class="progress-center">
+            <div class="progress-value" id="progress-value">0%</div>
+            <div class="progress-caption">Completed</div>
+          </div>
+        </div>
+        <div class="progress-summary" id="progress-summary">0 completed · 0 upcoming</div>
+      </div>
+    </section>
+
+    <section class="stats-card" id="stats-grid">
+      <div class="stat-block">
+        <div class="stat-label">Total stages</div>
+        <div class="stat-value" id="stat-total">0</div>
+        <div class="stat-sub">Unified roadmap items tracked in the shared dashboard DB</div>
+      </div>
+      <div class="stat-block">
+        <div class="stat-label">Upcoming</div>
+        <div class="stat-value" id="stat-open">0</div>
+        <div class="stat-sub">Prioritized at the top of the timeline</div>
+      </div>
+      <div class="stat-block">
+        <div class="stat-label">Completed</div>
+        <div class="stat-value" id="stat-done">0</div>
+        <div class="stat-sub">Locked baseline items and manually completed work</div>
+      </div>
+    </section>
+
+    <section class="composer-card">
+      <div class="composer-head">
+        <div>
+          <h2 class="card-title">Add new TODO</h2>
+          <p class="card-copy">Saved directly to the dashboard database, then appended to the roadmap timeline as the next stage.</p>
+        </div>
+        <div class="composer-status" id="composer-status"></div>
+      </div>
+      <form id="composer-form" class="composer-grid">
+        <div class="field">
+          <label for="todo-title">Title</label>
+          <input id="todo-title" name="title" type="text" maxlength="220" placeholder="Example: Add live-trading readiness checklist" required />
+        </div>
+        <div class="field">
+          <label for="todo-notes">Further context</label>
+          <textarea id="todo-notes" name="notes" rows="2" maxlength="1200" placeholder="Add any detail you want to see in the modal later."></textarea>
+        </div>
+        <div class="composer-actions">
+          <button class="btn-primary" id="composer-submit" type="submit">Save TODO</button>
+        </div>
+      </form>
+    </section>
+
+    <section class="timeline-card">
+      <div class="toolbar">
+        <div class="toolbar-left">
+          <input id="search-input" class="search-input" type="search" placeholder="Search stage title or notes" />
+          <div class="filter-pills">
+            <button class="filter-pill active" data-filter="all" type="button">All</button>
+            <button class="filter-pill" data-filter="open" type="button">Upcoming</button>
+            <button class="filter-pill" data-filter="done" type="button">Completed</button>
+          </div>
+        </div>
+        <button class="btn-ghost" id="reload-btn" type="button">Reload from DB</button>
+      </div>
+
+      <div class="timeline-section">
+        <div class="section-head">
+          <h2 class="section-title">Upcoming</h2>
+          <div class="section-count" id="upcoming-count">0 items</div>
+        </div>
+        <div class="timeline-list" id="upcoming-list"></div>
+      </div>
+
+      <div class="timeline-section">
+        <div class="section-head">
+          <h2 class="section-title">Completed</h2>
+          <div class="section-count" id="completed-count">0 items</div>
+        </div>
+        <div class="timeline-list" id="completed-list"></div>
+      </div>
+    </section>
+  </div>
+
+  <div class="modal-backdrop" id="todo-modal" aria-hidden="true">
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+      <div class="modal-head">
+        <div>
+          <div class="eyebrow" id="modal-eyebrow">Stage details</div>
+          <h3 class="modal-title" id="modal-title">TODO detail</h3>
+        </div>
+        <button class="modal-close" id="modal-close" type="button" aria-label="Close">×</button>
+      </div>
+      <div class="modal-grid">
+        <div class="modal-stat">
+          <div class="modal-label">Stage</div>
+          <div class="modal-value" id="modal-stage">—</div>
+        </div>
+        <div class="modal-stat">
+          <div class="modal-label">Status</div>
+          <div class="modal-value" id="modal-status">—</div>
+        </div>
+        <div class="modal-stat">
+          <div class="modal-label">Source</div>
+          <div class="modal-value" id="modal-source">—</div>
+        </div>
+      </div>
+      <div class="modal-body">
+        <div class="modal-panel">
+          <h4>Roadmap context</h4>
+          <p id="modal-detail">—</p>
+        </div>
+        <div class="modal-panel">
+          <h4>Saved notes</h4>
+          <p id="modal-notes">No extra notes saved.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const bootstrap = {bootstrap};
     const state = {{
-        allItems: [],
-        search: '',
-        status: 'all',
-        category: 'all',
-        modalKey: null,
+      items: Array.isArray(bootstrap.items) ? bootstrap.items.slice() : [],
+      filter: 'all',
+      query: '',
+      activeItem: null,
+      saving: false,
+    }};
+
+    const els = {{
+      ring: document.getElementById('progress-ring'),
+      progressValue: document.getElementById('progress-value'),
+      progressSummary: document.getElementById('progress-summary'),
+      statTotal: document.getElementById('stat-total'),
+      statOpen: document.getElementById('stat-open'),
+      statDone: document.getElementById('stat-done'),
+      composerForm: document.getElementById('composer-form'),
+      composerSubmit: document.getElementById('composer-submit'),
+      composerStatus: document.getElementById('composer-status'),
+      titleInput: document.getElementById('todo-title'),
+      notesInput: document.getElementById('todo-notes'),
+      searchInput: document.getElementById('search-input'),
+      reloadBtn: document.getElementById('reload-btn'),
+      upcomingList: document.getElementById('upcoming-list'),
+      completedList: document.getElementById('completed-list'),
+      upcomingCount: document.getElementById('upcoming-count'),
+      completedCount: document.getElementById('completed-count'),
+      pills: Array.from(document.querySelectorAll('.filter-pill')),
+      modal: document.getElementById('todo-modal'),
+      modalClose: document.getElementById('modal-close'),
+      modalEyebrow: document.getElementById('modal-eyebrow'),
+      modalTitle: document.getElementById('modal-title'),
+      modalStage: document.getElementById('modal-stage'),
+      modalStatus: document.getElementById('modal-status'),
+      modalSource: document.getElementById('modal-source'),
+      modalDetail: document.getElementById('modal-detail'),
+      modalNotes: document.getElementById('modal-notes'),
     }};
 
     function escapeHtml(value) {{
-        return String(value ?? '')
-            .replace(/&/g, '&amp;')
-            .replace(/</g, '&lt;')
-            .replace(/>/g, '&gt;')
-            .replace(/"/g, '&quot;');
+      return String(value ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
     }}
 
     function sortedItems(items) {{
-        return [...items].sort((a, b) => {{
-            const left = STATUS_ORDER[a.status] ?? 99;
-            const right = STATUS_ORDER[b.status] ?? 99;
-            if (left !== right) return left - right;
-            return Number(a.stage_number || 0) - Number(b.stage_number || 0);
-        }});
-    }}
-
-    function currentStats(items) {{
-        const total = items.length;
-        const done = items.filter((item) => item.status === 'done').length;
-        const open = items.filter((item) => item.status === 'open').length;
-        const notes = items.filter((item) => item.status === 'note').length;
-        return {{ total, done, open, notes, completion_pct: total ? (done / total) * 100 : 0 }};
+      return items.slice().sort((a, b) => Number(a.sort_order || 0) - Number(b.sort_order || 0));
     }}
 
     function filteredItems() {{
-        const query = state.search.trim().toLowerCase();
-        return sortedItems(state.allItems).filter((item) => {{
-            const matchStatus = state.status === 'all' || item.status === state.status;
-            const matchCategory = state.category === 'all' || item.category === state.category;
-            const blob = [
-                item.text,
-                item.detail,
-                item.category,
-                item.section,
-                item.source_file,
-                `stage ${{item.stage_number}}`,
-                `#${{item.stage_number}}`,
-            ].join(' ').toLowerCase();
-            const matchSearch = !query || blob.includes(query);
-            return matchStatus && matchCategory && matchSearch;
-        }});
+      const q = state.query.trim().toLowerCase();
+      return sortedItems(state.items).filter(item => {{
+        if (state.filter !== 'all' && item.status !== state.filter) return false;
+        if (!q) return true;
+        const haystack = `${{item.text || ''}} ${{item.notes || ''}} ${{item.detail || ''}}`.toLowerCase();
+        return haystack.includes(q);
+      }});
     }}
 
-    function setChipGroupActive(groupName, value) {{
-        document.querySelectorAll(`[data-chip-group="${{groupName}}"] .chip`).forEach((chip) => {{
-            chip.classList.toggle('active', chip.dataset.value === value);
-        }});
-    }}
-
-    function renderCategoryChips() {{
-        const holder = document.getElementById('category-chip-row');
-        if (!holder) return;
-        const counts = new Map();
-        state.allItems.forEach((item) => counts.set(item.category, (counts.get(item.category) || 0) + 1));
-        const categories = CATEGORY_ORDER.filter((key) => counts.has(key));
-        holder.innerHTML = [
-            `<span class="chip ${{state.category === 'all' ? 'active' : ''}}" data-value="all">All themes</span>`,
-            ...categories.map((category) => `<span class="chip ${{state.category === category ? 'active' : ''}}" data-value="${{escapeHtml(category)}}">${{escapeHtml(category.charAt(0).toUpperCase() + category.slice(1))}}</span>`),
-        ].join('');
-    }}
-
-    function updateProgressDonut(stats) {{
-        const circumference = 2 * Math.PI * 56;
-        const segments = [
-            {{ id: 'progress-arc-done', value: stats.done }},
-            {{ id: 'progress-arc-open', value: stats.open }},
-            {{ id: 'progress-arc-note', value: stats.notes }},
-        ];
-        const total = Math.max(stats.total, 1);
-        const segmentGap = 3;
-        let cursor = 0;
-        segments.forEach((segment) => {{
-            const circle = document.getElementById(segment.id);
-            if (!circle) return;
-            const rawDash = (segment.value / total) * circumference;
-            if (segment.value <= 0 || rawDash <= 0) {{
-                circle.setAttribute('stroke-dasharray', `0 ${{circumference}}`);
-                circle.setAttribute('stroke-dashoffset', '0');
-                return;
-            }}
-            const dash = Math.max(rawDash - segmentGap, 0.0001);
-            const gap = Math.max(circumference - dash, 0);
-            circle.setAttribute('stroke-dasharray', `${{dash}} ${{gap}}`);
-            circle.setAttribute('stroke-dashoffset', `${{-cursor}}`);
-            cursor += rawDash;
-        }});
-        const setText = (id, value) => {{ const el = document.getElementById(id); if (el) el.textContent = value; }};
-        setText('progress-center-value', `${{Math.round(stats.completion_pct)}}%`);
-        setText('progress-center-label', stats.done ? 'complete' : 'starting');
-        setText('progress-done-count', String(stats.done));
-        setText('progress-open-count', String(stats.open));
-        setText('progress-note-count', String(stats.notes));
+    function statCounts(items) {{
+      const total = items.length;
+      const done = items.filter(item => item.status === 'done').length;
+      const open = total - done;
+      return {{ total, done, open, completionPct: total ? Math.round((done / total) * 100) : 0 }};
     }}
 
     function updateSummary() {{
-        const stats = currentStats(state.allItems);
-        const setText = (id, value) => {{ const el = document.getElementById(id); if (el) el.textContent = value; }};
-        setText('stat-total', String(stats.total));
-        setText('stat-done', String(stats.done));
-        setText('stat-open', String(stats.open));
-        setText('stat-notes', String(stats.notes));
-        setText('progress-text', `${{stats.done}}/${{stats.total}} complete`);
-        const progressFill = document.getElementById('progress-fill');
-        if (progressFill) progressFill.style.width = `${{Math.max(0, Math.min(stats.completion_pct, 100)).toFixed(1)}}%`;
-        updateProgressDonut(stats);
-        const focus = sortedItems(state.allItems).find((item) => item.status === 'open');
-        setText('focus-text', focus ? focus.text : 'Nothing queued — the current roadmap is clear.');
-        setText('focus-badge', focus ? `Stage #${{focus.stage_number}} is next` : 'All clear');
+      const counts = statCounts(state.items);
+      els.statTotal.textContent = String(counts.total);
+      els.statOpen.textContent = String(counts.open);
+      els.statDone.textContent = String(counts.done);
+      els.progressValue.textContent = `${{counts.completionPct}}%`;
+      els.progressSummary.textContent = `${{counts.done}} completed · ${{counts.open}} upcoming`;
+      els.ring.style.setProperty('--done-angle', `${{Math.max(0, Math.min(360, counts.completionPct * 3.6))}}deg`);
     }}
 
-    function groupMarkup(title, subtitle, items) {{
-        if (!items.length) return '';
-        return `
-            <section class="timeline-group">
-                <div class="timeline-group-head">
-                    <strong>${{escapeHtml(title)}}</strong>
-                    <span>${{escapeHtml(subtitle)}}</span>
-                </div>
-                ${{items.map((item) => itemMarkup(item)).join('')}}
-            </section>
-        `;
+    function cardMarkup(item) {{
+      const statusClass = item.status === 'done' ? 'completed' : 'upcoming';
+      const toggleLabel = item.status === 'done' ? 'Move back to upcoming' : 'Mark completed';
+      const toggleClass = item.status === 'done' ? 'reset' : 'done';
+      const notes = item.notes ? `<p class="item-notes">${{escapeHtml(item.notes)}}</p>` : '';
+      const sourceChip = item.is_custom ? '<span class="source-chip">DB added</span>' : `<span class="source-chip">${{escapeHtml(item.source_file)}}</span>`;
+      const toggle = item.can_toggle
+        ? `<button class="toggle-btn ${{toggleClass}}" type="button" data-action="toggle" data-item-key="${{escapeHtml(item.item_key)}}">${{escapeHtml(toggleLabel)}}</button>`
+        : '';
+      return `
+        <article class="timeline-item" data-action="open" data-item-key="${{escapeHtml(item.item_key)}}" tabindex="0" role="button" aria-label="Open stage ${{item.stage_number}} details">
+          <div class="timeline-dot-wrap">
+            <div class="timeline-dot ${{item.status === 'done' ? 'done' : ''}}"></div>
+          </div>
+          <div class="item-main">
+            <div class="item-meta">
+              <span class="stage-chip">Stage #${{item.stage_number}}</span>
+              <span class="status-chip ${{statusClass}}">${{escapeHtml(item.status_label)}}</span>
+              ${{sourceChip}}
+            </div>
+            <h3 class="item-title">${{escapeHtml(item.text)}}</h3>
+            ${{notes}}
+          </div>
+          <div class="item-actions">
+            ${{toggle}}
+          </div>
+        </article>
+      `;
     }}
 
-    function itemMarkup(item) {{
-        const teaser = item.detail || item.text;
-        return `
-            <button class="timeline-item" type="button" data-key="${{escapeHtml(item.item_key)}}" data-status="${{escapeHtml(item.status)}}" data-priority="${{item.is_priority ? 'true' : 'false'}}">
-                <span class="timeline-marker" aria-hidden="true"></span>
-                <div class="timeline-card">
-                    <div class="timeline-head">
-                        <div class="timeline-title-wrap">
-                            <span class="timeline-stage">#${{escapeHtml(item.stage_number)}}</span>
-                            <span class="timeline-pill status-${{escapeHtml(item.status)}}">${{escapeHtml(item.status_label)}}</span>
-                            <span class="timeline-pill">${{escapeHtml(item.category.charAt(0).toUpperCase() + item.category.slice(1))}}</span>
-                        </div>
-                        <div class="timeline-head-right">
-                            <span class="timeline-pill">${{escapeHtml(item.source_file)}}</span>
-                            <span class="timeline-hint">${{item.is_priority ? 'Next up · open details to execute cleanly' : 'Click to open details'}}</span>
-                        </div>
-                    </div>
-                    <div class="timeline-text">${{escapeHtml(item.text)}}</div>
-                    <div class="timeline-sub">${{escapeHtml(teaser)}}</div>
-                    <div class="timeline-meta">
-                        <span>Stage ${{escapeHtml(item.stage_number)}}</span>
-                        <span>Section: ${{escapeHtml(item.section)}}</span>
-                        <span>${{item.can_toggle ? 'Stored in DB-backed dashboard state' : 'Locked from source summary as completed'}}</span>
-                    </div>
-                </div>
-            </button>
-        `;
+    function emptyMarkup(label) {{
+      return `<div class="empty-state">No ${{label.toLowerCase()}} items match the current filter.</div>`;
     }}
 
     function renderTimeline() {{
-        const holder = document.getElementById('todo-timeline');
-        const empty = document.getElementById('todo-empty');
-        if (!holder || !empty) return;
-        const items = filteredItems();
-        if (!items.length) {{
-            holder.innerHTML = '';
-            empty.style.display = 'block';
-            return;
-        }}
-        empty.style.display = 'none';
-        const upcoming = items.filter((item) => item.status === 'open').map((item, index) => ({{ ...item, is_priority: index === 0 }}));
-        const notes = items.filter((item) => item.status === 'note').map((item) => ({{ ...item, is_priority: false }}));
-        const done = items.filter((item) => item.status === 'done').map((item) => ({{ ...item, is_priority: false }}));
-        holder.innerHTML = [
-            groupMarkup('Upcoming work', `${{upcoming.length}} items still to complete`, upcoming),
-            groupMarkup('Live notes', `${{notes.length}} context items`, notes),
-            groupMarkup('Completed work', `${{done.length}} shipped stages`, done),
-        ].filter(Boolean).join('');
+      const visible = filteredItems();
+      const upcoming = visible.filter(item => item.status === 'open');
+      const completed = visible.filter(item => item.status === 'done');
+      els.upcomingCount.textContent = `${{upcoming.length}} item${{upcoming.length === 1 ? '' : 's'}}`;
+      els.completedCount.textContent = `${{completed.length}} item${{completed.length === 1 ? '' : 's'}}`;
+      els.upcomingList.innerHTML = upcoming.length ? upcoming.map(cardMarkup).join('') : emptyMarkup('Upcoming');
+      els.completedList.innerHTML = completed.length ? completed.map(cardMarkup).join('') : emptyMarkup('Completed');
     }}
 
-    function renderAll() {{
-        renderCategoryChips();
-        setChipGroupActive('status', state.status);
-        updateSummary();
-        renderTimeline();
-        if (state.modalKey) openModal(state.modalKey, false);
+    function render() {{
+      els.pills.forEach(pill => pill.classList.toggle('active', pill.dataset.filter === state.filter));
+      updateSummary();
+      renderTimeline();
     }}
 
-    async function persistTaskState(itemKey, status) {{
-        if (!window.location.origin.startsWith('http')) return;
-        try {{
-            await fetch('/api/todo-state', {{
-                method: 'POST',
-                headers: {{ 'Content-Type': 'application/json' }},
-                body: JSON.stringify({{ item_key: itemKey, status }}),
-            }});
-        }} catch (error) {{
-            console.log('todo state sync failed', error);
-        }}
+    function findItem(itemKey) {{
+      return state.items.find(item => item.item_key === itemKey) || null;
     }}
 
-    async function toggleTask(itemKey) {{
-        const target = state.allItems.find((item) => item.item_key === itemKey);
-        if (!target || !target.can_toggle) return;
-        const nextStatus = target.status === 'done' ? 'open' : 'done';
-        state.allItems = state.allItems.map((item) => item.item_key === itemKey ? {{ ...item, status: nextStatus, status_label: nextStatus === 'done' ? 'Completed' : 'Upcoming' }} : item);
-        renderAll();
-        await persistTaskState(itemKey, nextStatus);
-    }}
-
-    function openModal(itemKey, scrollIntoView = true) {{
-        const item = state.allItems.find((entry) => entry.item_key === itemKey);
-        const modal = document.getElementById('todo-modal');
-        if (!item || !modal) return;
-        state.modalKey = itemKey;
-        const setText = (id, value) => {{ const el = document.getElementById(id); if (el) el.textContent = value; }};
-        setText('modal-title', item.text);
-        setText('modal-stage', `#${{item.stage_number}}`);
-        setText('modal-status', item.status_label);
-        setText('modal-category', item.category.charAt(0).toUpperCase() + item.category.slice(1));
-        setText('modal-detail', item.detail);
-        setText('modal-next', item.status === 'done'
-            ? 'This stage is already resolved. Only revisit it if the implementation drifted or the roadmap source needs correction.'
-            : item.status === 'note'
-                ? 'Keep this as operating context while prioritizing upcoming roadmap items.'
-                : 'Use this as the next actionable roadmap stage and complete the smallest safe implementation slice first.');
-        setText('modal-source', item.source_file);
-        setText('modal-section', item.section);
-        setText('modal-stage-kv', String(item.stage_number));
-        setText('modal-db', item.can_toggle ? 'Toggle synced through SQLite-backed dashboard state' : 'Locked by source summary');
-        const toggleBtn = document.getElementById('modal-toggle-btn');
-        if (toggleBtn) {{
-            toggleBtn.style.display = item.can_toggle ? '' : 'none';
-            toggleBtn.textContent = item.status === 'done' ? 'Move back to upcoming' : 'Mark as completed';
-            toggleBtn.dataset.key = item.item_key;
-        }}
-        modal.classList.add('open');
-        document.body.style.overflow = 'hidden';
-        if (scrollIntoView) modal.querySelector('.modal-card')?.scrollTo({{ top: 0, behavior: 'instant' }});
+    function openModal(item) {{
+      if (!item) return;
+      state.activeItem = item;
+      els.modalEyebrow.textContent = item.status === 'done' ? 'Completed stage' : 'Upcoming stage';
+      els.modalTitle.textContent = item.text || 'TODO detail';
+      els.modalStage.textContent = `Stage #${{item.stage_number}}`;
+      els.modalStatus.textContent = item.status_label;
+      els.modalSource.textContent = item.is_custom ? 'dashboard.sqlite (user-added)' : item.source_file;
+      els.modalDetail.textContent = item.detail || 'No detail available.';
+      els.modalNotes.textContent = item.notes || 'No extra notes saved.';
+      els.modal.classList.add('open');
+      els.modal.setAttribute('aria-hidden', 'false');
+      document.body.style.overflow = 'hidden';
     }}
 
     function closeModal() {{
-        const modal = document.getElementById('todo-modal');
-        if (!modal) return;
-        modal.classList.remove('open');
-        document.body.style.overflow = '';
-        state.modalKey = null;
+      state.activeItem = null;
+      els.modal.classList.remove('open');
+      els.modal.setAttribute('aria-hidden', 'true');
+      document.body.style.overflow = '';
     }}
 
-    async function hydrateFromApi() {{
-        if (!window.location.origin.startsWith('http')) return;
-        try {{
-            const response = await fetch('/api/todo-data', {{ cache: 'no-store' }});
-            const payload = await response.json();
-            state.allItems = Array.isArray(payload?.items) ? payload.items : [];
-            renderAll();
-        }} catch (error) {{
-            console.log('todo data hydrate failed', error);
-        }}
+    async function reloadItems(statusMessage = '') {{
+      if (statusMessage) els.composerStatus.textContent = statusMessage;
+      const response = await fetch('/api/todo-data', {{ cache: 'no-store' }});
+      if (!response.ok) throw new Error(`Reload failed (${{response.status}})`);
+      const payload = await response.json();
+      state.items = Array.isArray(payload.items) ? payload.items : [];
+      render();
     }}
 
-    function clearFilters() {{
-        state.search = '';
-        state.status = 'all';
-        state.category = 'all';
-        const search = document.getElementById('todo-search');
-        if (search) search.value = '';
-        renderAll();
+    async function saveToggle(itemKey) {{
+      const item = findItem(itemKey);
+      if (!item || !item.can_toggle) return;
+      const nextStatus = item.status === 'done' ? 'open' : 'done';
+      const response = await fetch('/api/todo-state', {{
+        method: 'POST',
+        headers: {{ 'Content-Type': 'application/json' }},
+        body: JSON.stringify({{ item_key: itemKey, status: nextStatus }}),
+      }});
+      if (!response.ok) throw new Error(`Save failed (${{response.status}})`);
+      await reloadItems('TODO state saved.');
+      if (els.modal.classList.contains('open')) {{
+        const refreshed = findItem(itemKey);
+        if (refreshed) openModal(refreshed);
+      }}
     }}
 
-    window.addEventListener('DOMContentLoaded', async () => {{
-        state.allItems = Array.isArray(INITIAL_TODO_DATA.items) ? INITIAL_TODO_DATA.items : [];
-        renderAll();
+    async function createTodo(event) {{
+      event.preventDefault();
+      if (state.saving) return;
+      const title = els.titleInput.value.trim();
+      const notes = els.notesInput.value.trim();
+      if (!title) {{
+        els.composerStatus.textContent = 'Title is required.';
+        return;
+      }}
+      state.saving = true;
+      els.composerSubmit.disabled = true;
+      els.composerStatus.textContent = 'Saving to dashboard DB…';
+      try {{
+        const response = await fetch('/api/todo-items', {{
+          method: 'POST',
+          headers: {{ 'Content-Type': 'application/json' }},
+          body: JSON.stringify({{ title, notes }}),
+        }});
+        const payload = await response.json();
+        if (!response.ok || !payload.ok) throw new Error(payload.error || `Save failed (${{response.status}})`);
+        els.titleInput.value = '';
+        els.notesInput.value = '';
+        await reloadItems('Saved. Timeline reloaded from dashboard DB.');
+      }} catch (error) {{
+        els.composerStatus.textContent = error.message || 'Unable to save TODO.';
+      }} finally {{
+        state.saving = false;
+        els.composerSubmit.disabled = false;
+      }}
+    }}
 
-        document.getElementById('todo-search')?.addEventListener('input', (event) => {{
-            state.search = event.target.value || '';
-            renderTimeline();
+    function handleTimelineClick(event) {{
+      const toggleButton = event.target.closest('[data-action="toggle"]');
+      if (toggleButton) {{
+        event.stopPropagation();
+        saveToggle(toggleButton.dataset.itemKey).catch(error => {{
+          els.composerStatus.textContent = error.message || 'Unable to update TODO status.';
         }});
+        return;
+      }}
+      const card = event.target.closest('[data-action="open"]');
+      if (!card) return;
+      openModal(findItem(card.dataset.itemKey));
+    }}
 
-        document.querySelector('[data-chip-group="status"]')?.addEventListener('click', (event) => {{
-            const chip = event.target.closest('.chip');
-            if (!chip) return;
-            state.status = chip.dataset.value || 'all';
-            renderAll();
-        }});
+    function handleTimelineKeydown(event) {{
+      const card = event.target.closest('[data-action="open"]');
+      if (!card) return;
+      if (event.key === 'Enter' || event.key === ' ') {{
+        event.preventDefault();
+        openModal(findItem(card.dataset.itemKey));
+      }}
+    }}
 
-        document.getElementById('category-chip-row')?.addEventListener('click', (event) => {{
-            const chip = event.target.closest('.chip');
-            if (!chip) return;
-            state.category = chip.dataset.value || 'all';
-            renderAll();
-        }});
-
-        document.getElementById('todo-timeline')?.addEventListener('click', (event) => {{
-            const item = event.target.closest('.timeline-item');
-            if (!item) return;
-            openModal(item.dataset.key || '');
-        }});
-
-        document.getElementById('modal-close-btn')?.addEventListener('click', closeModal);
-        document.getElementById('todo-modal')?.addEventListener('click', (event) => {{
-            if (event.target.id === 'todo-modal') closeModal();
-        }});
-        document.getElementById('modal-toggle-btn')?.addEventListener('click', async (event) => {{
-            const itemKey = event.currentTarget.dataset.key || '';
-            if (!itemKey) return;
-            await toggleTask(itemKey);
-            openModal(itemKey, false);
-        }});
-        document.getElementById('reset-filters-btn')?.addEventListener('click', clearFilters);
-        window.addEventListener('keydown', (event) => {{
-            if (event.key === 'Escape') closeModal();
-        }});
-
-        await hydrateFromApi();
+    els.pills.forEach(pill => pill.addEventListener('click', () => {{
+      state.filter = pill.dataset.filter || 'all';
+      render();
+    }}));
+    els.searchInput.addEventListener('input', event => {{
+      state.query = event.target.value || '';
+      render();
     }});
-    </script>
-</head>
-<body>
-    <div class="page-shell">
-    <div class="page-header">
-        <h1>🗒 Project Roadmap / TODO</h1>
-        <p class="subtitle">A database-backed roadmap timeline with completion sync, cleaner priority ordering, and drill-down detail for every stage.</p>
-    </div>
-    {nav('todo')}
+    els.composerForm.addEventListener('submit', createTodo);
+    els.reloadBtn.addEventListener('click', () => reloadItems('Reloaded from dashboard DB.').catch(error => {{
+      els.composerStatus.textContent = error.message || 'Unable to reload roadmap.';
+    }}));
+    els.upcomingList.addEventListener('click', handleTimelineClick);
+    els.completedList.addEventListener('click', handleTimelineClick);
+    els.upcomingList.addEventListener('keydown', handleTimelineKeydown);
+    els.completedList.addEventListener('keydown', handleTimelineKeydown);
+    els.modalClose.addEventListener('click', closeModal);
+    els.modal.addEventListener('click', event => {{ if (event.target === els.modal) closeModal(); }});
+    document.addEventListener('keydown', event => {{ if (event.key === 'Escape' && els.modal.classList.contains('open')) closeModal(); }});
 
-    <div class="hero">
-        <div class="hero-card">
-            <h2>Stage the roadmap like an operator, not a checklist</h2>
-            <p>
-                The TODO page now reads from the dashboard database, keeps duplicate summary rows out of the timeline,
-                pushes unfinished stages to the top, and opens every roadmap item in a detail modal so you can understand
-                why it matters before touching the code.
-            </p>
-            <div class="focus-box">
-                <div class="focus-label">Current focus</div>
-                <div class="focus-text" id="focus-text">{_escape(focus_text)}</div>
-            </div>
-            <div class="legend">
-                <span class="legend-pill">Timeline layout</span>
-                <span class="legend-pill">Modal drill-downs</span>
-                <span class="legend-pill">SQLite-backed state</span>
-                <span class="legend-pill" id="focus-badge">{_escape(focus_badge)}</span>
-            </div>
-        </div>
-        <div class="surface-card progress-card">
-            <div class="progress-card-head">
-                <div>
-                    <strong>Roadmap progress</strong>
-                    <div class="mini-note">Quick snapshot of the live roadmap state</div>
-                </div>
-                <div class="progress-note">The pie chart was rebuilt with a fixed donut shell so the progress arcs stay centered and legible while counts update.</div>
-            </div>
-            <div class="progress-donut-shell">
-                <div class="progress-donut">
-                    <svg class="progress-svg" viewBox="0 0 160 160" role="img" aria-label="Roadmap progress">
-                        <circle cx="80" cy="80" r="56" fill="none" stroke="#243244" stroke-width="18"></circle>
-                        <circle id="progress-arc-done" class="progress-arc" cx="80" cy="80" r="56" stroke="#22c55e"></circle>
-                        <circle id="progress-arc-open" class="progress-arc" cx="80" cy="80" r="56" stroke="#60a5fa"></circle>
-                        <circle id="progress-arc-note" class="progress-arc" cx="80" cy="80" r="56" stroke="#94a3b8"></circle>
-                    </svg>
-                    <div class="progress-center">
-                        <div>
-                            <strong id="progress-center-value">{pct:.0f}%</strong>
-                            <span id="progress-center-label">{'complete' if done else 'starting'}</span>
-                        </div>
-                    </div>
-                </div>
-                <div class="progress-legend">
-                    <div class="progress-row">
-                        <span class="dot" style="background:#22c55e"></span>
-                        <span>Completed</span>
-                        <span class="meta"><strong id="progress-done-count">{done}</strong><span>done</span></span>
-                    </div>
-                    <div class="progress-row">
-                        <span class="dot" style="background:#60a5fa"></span>
-                        <span>Upcoming</span>
-                        <span class="meta"><strong id="progress-open-count">{open_count}</strong><span>open</span></span>
-                    </div>
-                    <div class="progress-row">
-                        <span class="dot" style="background:#94a3b8"></span>
-                        <span>Live notes</span>
-                        <span class="meta"><strong id="progress-note-count">{notes}</strong><span>notes</span></span>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <div class="stats-grid">
-        <div class="stat-card"><div class="label">Total</div><div class="value" id="stat-total">{total}</div><div class="sub">roadmap items in the current store</div></div>
-        <div class="stat-card"><div class="label">Done</div><div class="value" id="stat-done">{done}</div><div class="sub">completed items pushed to the bottom</div></div>
-        <div class="stat-card"><div class="label">Upcoming</div><div class="value" id="stat-open">{open_count}</div><div class="sub">next stages waiting for action</div></div>
-        <div class="stat-card"><div class="label">Notes</div><div class="value" id="stat-notes">{notes}</div><div class="sub">live context items for the operator</div></div>
-    </div>
-
-    <div class="progress-bar-wrap">
-        <div class="progress-head">
-            <strong>Completion</strong>
-            <div class="mini-note"><span id="progress-text">{done}/{total} complete</span> · synced through the dashboard store</div>
-        </div>
-        <div class="progress-track"><div class="progress-fill" id="progress-fill"></div></div>
-    </div>
-
-    <div class="insight-grid">
-        {categories_html}
-        <div class="surface-card">
-            <h3>How to use this page</h3>
-            <p>This layout is optimized for quickly processing what comes next, while still preserving deeper context on click.</p>
-            <div class="surface-list">
-                <div class="surface-list-item">Upcoming items stay at the top and preserve stage order so the next move is obvious.</div>
-                <div class="surface-list-item">Completed stages are automatically pushed down, reducing scan noise during execution.</div>
-                <div class="surface-list-item">Each roadmap card opens a modal with more detail and a status toggle when the item is not locked as source-complete.</div>
-            </div>
-        </div>
-    </div>
-
-    <div class="timeline-shell">
-        <div class="toolbar">
-            <div class="toolbar-left">
-                <input id="todo-search" class="search-input" placeholder="Search stage numbers, roadmap text, categories, sections, or sources..." />
-                <button class="chip" id="reset-filters-btn" type="button">Reset filters</button>
-            </div>
-            <div class="chip-row" data-chip-group="status">
-                <span class="chip active" data-value="all">All</span>
-                <span class="chip" data-value="open">Upcoming</span>
-                <span class="chip" data-value="note">Notes</span>
-                <span class="chip" data-value="done">Completed</span>
-            </div>
-        </div>
-        <div class="toolbar">
-            <div class="chip-row" id="category-chip-row" data-chip-group="category"></div>
-        </div>
-        <div class="timeline" id="todo-timeline"></div>
-        <div class="empty-state" id="todo-empty" style="display:none;">No roadmap items matched the current filters.</div>
-    </div>
-
-    <p class="footer-note" style="color:#64748b;font-size:12px;margin-top:10px;">
-        Source: {REPO_ROOT / 'data' / 'dashboard.sqlite'} · page shell generated locally, roadmap data loaded from the dashboard store.
-    </p>
-    </div>
-
-    <div class="modal-backdrop" id="todo-modal" aria-hidden="true">
-        <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="modal-title">
-            <div class="modal-head">
-                <div>
-                    <h3 id="modal-title">Roadmap item</h3>
-                    <div class="modal-pills">
-                        <span class="timeline-stage" id="modal-stage">#0</span>
-                        <span class="timeline-pill" id="modal-status">Upcoming</span>
-                        <span class="timeline-pill" id="modal-category">Product</span>
-                    </div>
-                </div>
-                <button class="modal-close" id="modal-close-btn" type="button" aria-label="Close">×</button>
-            </div>
-            <div class="modal-body">
-                <div class="modal-panel">
-                    <h4>What this stage means</h4>
-                    <p id="modal-detail"></p>
-                </div>
-                <div class="modal-panel">
-                    <h4>Operator next step</h4>
-                    <p id="modal-next"></p>
-                </div>
-                <div class="modal-grid">
-                    <div class="modal-kv"><div class="k">Source</div><div class="v" id="modal-source"></div></div>
-                    <div class="modal-kv"><div class="k">Section</div><div class="v" id="modal-section"></div></div>
-                    <div class="modal-kv"><div class="k">Stage number</div><div class="v" id="modal-stage-kv"></div></div>
-                    <div class="modal-kv"><div class="k">State persistence</div><div class="v" id="modal-db"></div></div>
-                </div>
-                <div class="modal-actions">
-                    <div class="modal-footnote">Completion changes are stored in the dashboard SQLite flow so the roadmap stays consistent across refreshes.</div>
-                    <div style="display:flex; gap:10px; flex-wrap:wrap;">
-                        <button class="action-btn action-secondary" type="button" onclick="closeModal()">Close</button>
-                        <button class="action-btn action-primary" id="modal-toggle-btn" type="button">Mark as completed</button>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
+    render();
+  </script>
 </body>
-</html>"""
-    OUTPUT.write_text(html)
-    print(f"✅ Roadmap page generated: {OUTPUT}")
+</html>
+"""
 
+
+def build_todo_page() -> None:
+    sync_all_if_needed(min_interval=0.0)
+    items = load_todo_items()
+    html = build_page(items, todo_stats(items))
+    OUTPUT.write_text(html, encoding="utf-8")
 
 
 def main() -> None:
     build_todo_page()
+    print(f"✅ Wrote {OUTPUT.relative_to(REPO_ROOT)}")
 
 
 if __name__ == "__main__":
