@@ -370,7 +370,12 @@ def _parse_summary_items(path: Path) -> list[dict[str, Any]]:
             continue
         if line.startswith("- ") and section in {"done", "open", "status"}:
             text = line[2:].strip()
-            if not text or text.lower().startswith(("job id:", "schedule:", "mode:")):
+            normalized_text = text.lower()
+            if (
+                not text
+                or normalized_text.startswith(("job id:", "schedule:", "mode:"))
+                or normalized_text.startswith("current focus")
+            ):
                 continue
             item_status = "done" if section == "done" else "open"
             items.append({

@@ -97,9 +97,12 @@ def build_page(items: list[dict[str, Any]], stats: dict[str, Any]) -> str:
     .hero-meta {{ display:flex; flex-wrap:wrap; gap:10px; margin-top:16px; }}
     .hero-chip {{ border:1px solid rgba(96,165,250,.28); background:rgba(15,23,42,.75); color:#dbeafe; border-radius:999px; padding:8px 12px; font-size:12px; }}
     .progress-panel {{ display:grid; gap:14px; justify-items:center; }}
-    .progress-ring {{ position:relative; width:220px; height:220px; border-radius:50%; background:conic-gradient(#22c55e 0deg, #22c55e var(--done-angle), rgba(59,130,246,.92) var(--done-angle), rgba(59,130,246,.92) 360deg); box-shadow:inset 0 0 0 1px rgba(148,163,184,.12), 0 18px 40px rgba(15,23,42,.42); }}
-    .progress-ring::after {{ content:''; position:absolute; inset:22px; border-radius:50%; background:linear-gradient(180deg, rgba(15,23,42,.98), rgba(2,6,23,.98)); box-shadow:inset 0 0 0 1px rgba(148,163,184,.12); }}
-    .progress-center {{ position:absolute; inset:0; z-index:1; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; padding:22px; }}
+    .progress-ring {{ position:relative; width:220px; height:220px; display:grid; place-items:center; }}
+    .progress-svg {{ width:220px; height:220px; transform:rotate(-90deg); filter:drop-shadow(0 18px 40px rgba(15,23,42,.42)); }}
+    .progress-track {{ fill:none; stroke:rgba(59,130,246,.24); stroke-width:16; }}
+    .progress-remaining {{ fill:none; stroke:rgba(59,130,246,.88); stroke-width:16; stroke-linecap:round; }}
+    .progress-done {{ fill:none; stroke:#22c55e; stroke-width:16; stroke-linecap:round; transition:stroke-dashoffset .28s ease; }}
+    .progress-center {{ position:absolute; inset:26px; z-index:1; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; padding:22px; border-radius:50%; background:linear-gradient(180deg, rgba(15,23,42,.98), rgba(2,6,23,.98)); box-shadow:inset 0 0 0 1px rgba(148,163,184,.12); }}
     .progress-value {{ font-size:40px; font-weight:800; line-height:1; color:#f8fafc; }}
     .progress-caption {{ margin-top:8px; color:#94a3b8; font-size:12px; text-transform:uppercase; letter-spacing:.12em; }}
     .progress-summary {{ color:#cbd5e1; font-size:13px; text-align:center; max-width:220px; line-height:1.6; }}
@@ -212,7 +215,12 @@ def build_page(items: list[dict[str, Any]], stats: dict[str, Any]) -> str:
         </div>
       </div>
       <div class="progress-panel">
-        <div class="progress-ring" id="progress-ring" style="--done-angle: 0deg;">
+        <div class="progress-ring" id="progress-ring">
+          <svg class="progress-svg" viewBox="0 0 220 220" aria-hidden="true">
+            <circle class="progress-track" cx="110" cy="110" r="78"></circle>
+            <circle class="progress-remaining" cx="110" cy="110" r="78"></circle>
+            <circle class="progress-done" id="progress-done" cx="110" cy="110" r="78"></circle>
+          </svg>
           <div class="progress-center">
             <div class="progress-value" id="progress-value">0%</div>
             <div class="progress-caption">Completed</div>
@@ -332,6 +340,8 @@ def build_page(items: list[dict[str, Any]], stats: dict[str, Any]) -> str:
 
   <script>
     const bootstrap = {bootstrap};
+    const PROGRESS_RADIUS = 78;
+
     const state = {{
       items: Array.isArray(bootstrap.items) ? bootstrap.items.slice() : [],
       filter: 'all',
@@ -341,7 +351,7 @@ def build_page(items: list[dict[str, Any]], stats: dict[str, Any]) -> str:
     }};
 
     const els = {{
-      ring: document.getElementById('progress-ring'),
+      progressDone: document.getElementById('progress-done'),
       progressValue: document.getElementById('progress-value'),
       progressSummary: document.getElementById('progress-summary'),
       statTotal: document.getElementById('stat-total'),
@@ -401,12 +411,15 @@ def build_page(items: list[dict[str, Any]], stats: dict[str, Any]) -> str:
 
     function updateSummary() {{
       const counts = statCounts(state.items);
+      const circumference = 2 * Math.PI * PROGRESS_RADIUS;
+      const progress = Math.max(0, Math.min(1, counts.completionPct / 100));
       els.statTotal.textContent = String(counts.total);
       els.statOpen.textContent = String(counts.open);
       els.statDone.textContent = String(counts.done);
       els.progressValue.textContent = `${{counts.completionPct}}%`;
       els.progressSummary.textContent = `${{counts.done}} completed · ${{counts.open}} upcoming`;
-      els.ring.style.setProperty('--done-angle', `${{Math.max(0, Math.min(360, counts.completionPct * 3.6))}}deg`);
+      els.progressDone.style.strokeDasharray = `${{circumference}} ${{circumference}}`;
+      els.progressDone.style.strokeDashoffset = `${{circumference * (1 - progress)}}`;
     }}
 
     function cardMarkup(item) {{
