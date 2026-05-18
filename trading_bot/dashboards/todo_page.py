@@ -1,5 +1,5 @@
 #!/Users/damikaanupama/trading-bot/venv/bin/python3.13
-"""Timeline-style roadmap / TODO dashboard backed by the SQLite dashboard store."""
+"""Timeline-style roadmap / TODO dashboard backed by the shared runtime data store."""
 from __future__ import annotations
 
 import json
@@ -20,7 +20,7 @@ STATUS_COPY = {
 
 SOURCE_COPY = {
     "roadmap_summary.yml": "Synced from the roadmap summary file.",
-    "dashboard.sqlite": "User-added todo stored directly in the dashboard database.",
+    "runtime_state.json": "User-added todo stored in the shared runtime data store.",
 }
 
 
@@ -41,7 +41,7 @@ def _status_label(status: str) -> str:
 def _detail_text(item: dict[str, Any]) -> str:
     status = str(item.get("status") or "open")
     notes = str(item.get("notes") or "").strip()
-    source_name = Path(str(item.get("source_file") or "dashboard.sqlite")).name or "dashboard.sqlite"
+    source_name = Path(str(item.get("source_file") or "runtime_state.json")).name or "runtime_state.json"
     source_copy = SOURCE_COPY.get(source_name, "Stored in the dashboard data store.")
     parts = [f"Stage #{int(item.get('sort_order', 0)) + 1}", source_copy, STATUS_COPY.get(status, STATUS_COPY["open"])]
     if notes:
@@ -52,7 +52,7 @@ def _detail_text(item: dict[str, Any]) -> str:
 def _payload_item(item: dict[str, Any]) -> dict[str, Any]:
     status = str(item.get("status") or "open")
     sort_order = int(item.get("sort_order", 0))
-    source_name = Path(str(item.get("source_file") or "dashboard.sqlite")).name or "dashboard.sqlite"
+    source_name = Path(str(item.get("source_file") or "runtime_state.json")).name or "runtime_state.json"
     return {
         "item_key": str(item.get("item_key", "")),
         "stage_number": sort_order + 1,
@@ -178,7 +178,7 @@ def build_page(items: list[dict[str, Any]], stats: dict[str, Any]) -> str:
       .modal-grid {{ grid-template-columns:1fr; }}
     }}
     @media (max-width: 720px) {{
-      body {{ padding:14px; }}
+      .page-shell {{ padding:14px; }}
       .hero-title {{ font-size:28px; }}
       .stats-card {{ grid-template-columns:1fr; }}
       .toolbar {{ align-items:stretch; }}
@@ -190,8 +190,13 @@ def build_page(items: list[dict[str, Any]], stats: dict[str, Any]) -> str:
   </style>
 </head>
 <body>
-  {nav('todo')}
-  <div class="todo-shell">
+  <div class="page-shell">
+    <div class="page-header">
+      <h1>🗒 Roadmap & TODO</h1>
+      <p class="subtitle">Prioritized execution timeline, completion tracking, and DB-backed todo capture for the trading-bot roadmap.</p>
+    </div>
+    {nav('todo')}
+    <div class="todo-shell">
     <section class="hero-card">
       <div>
         <div class="eyebrow">Roadmap timeline</div>
@@ -465,7 +470,7 @@ def build_page(items: list[dict[str, Any]], stats: dict[str, Any]) -> str:
       els.modalTitle.textContent = item.text || 'TODO detail';
       els.modalStage.textContent = `Stage #${{item.stage_number}}`;
       els.modalStatus.textContent = item.status_label;
-      els.modalSource.textContent = item.is_custom ? 'dashboard.sqlite (user-added)' : item.source_file;
+      els.modalSource.textContent = item.is_custom ? 'runtime_state.json (user-added)' : item.source_file;
       els.modalDetail.textContent = item.detail || 'No detail available.';
       els.modalNotes.textContent = item.notes || 'No extra notes saved.';
       els.modal.classList.add('open');

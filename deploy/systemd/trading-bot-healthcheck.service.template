@@ -1,0 +1,14 @@
+[Unit]
+Description=Trading Bot health check and auto-restart
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=__RUN_USER__
+WorkingDirectory=__REPO_ROOT__
+EnvironmentFile=__REPO_ROOT__/.env
+ExecStart=/bin/bash -lc '__REPO_ROOT__/scripts/healthcheck.sh http://127.0.0.1:${APP_PORT:-8008}/healthz || systemctl restart trading-bot-web.service'
+TimeoutStartSec=30
+NoNewPrivileges=true
+PrivateTmp=true

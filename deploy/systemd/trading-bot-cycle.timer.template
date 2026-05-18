@@ -1,0 +1,11 @@
+[Unit]
+Description=Trading Bot runtime cycle timer
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=30min
+Persistent=true
+Unit=trading-bot-cycle.service
+
+[Install]
+WantedBy=timers.target

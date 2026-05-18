@@ -1,0 +1,14 @@
+[Unit]
+Description=Trading Bot runtime cycle
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=__RUN_USER__
+WorkingDirectory=__REPO_ROOT__
+EnvironmentFile=__REPO_ROOT__/.env
+ExecStart=__REPO_ROOT__/scripts/run_cycle.sh
+TimeoutStartSec=1800
+NoNewPrivileges=true
+PrivateTmp=true
