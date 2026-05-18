@@ -17,6 +17,7 @@ Concise multi-strategy paper-trading repo for spot + futures experiments.
 - Chart hover behavior is now consistent across allocation, equity-curve, and activity charts.
 - Equity curve readability improved with cleaner axes, hover states, and gradient fill.
 - TODO completion state now persists in the dashboard SQLite store instead of only browser localStorage.
+- TODO page now renders a DB-backed roadmap timeline with modal drill-downs, de-duplicated summary rows, and clean upcoming-vs-completed ordering.
 - Cron health now warns on missed cadence, not just stale status.
 - Glossary updated to explain new dashboard/store/cron concepts.
 - Candidate scoring, allocation optimizer snapshots, promotion gates, and attribution review are now part of the live paper-trading loop.
@@ -95,23 +96,24 @@ bash run_bot.sh
 ```
 
 Open:
-- `http://127.0.0.1:8008/dashboard.html`
+- `http://127.0.0.1:8008/dashboard`
 
 ### One-line local launch in Chrome
 ```bash
 ./venv/bin/python3.13 app.py &
-open -a "Google Chrome" http://127.0.0.1:8008/dashboard.html
+open -a "Google Chrome" http://127.0.0.1:8008/dashboard
 ```
 
 ## Useful endpoints
-- `/dashboard.html` — main spot dashboard
-- `/futures.html` — futures dashboard
-- `/research.html` — research page
-- `/todo.html` — roadmap/TODO board
-- `/cron.html` — cron status and history
-- `/glossary.html` — glossary
+- `/dashboard` — main spot dashboard
+- `/futures` — futures dashboard
+- `/research` — research page
+- `/todo` — roadmap/TODO board
+- `/cron` — cron status and history
+- `/glossary` — glossary
 - `/api/dashboard-data` — live dashboard payload for the Vue UI
 - `/api/spot-summary` — compact spot summary JSON
+- `/api/todo-data` — roadmap timeline data pulled from SQLite-backed dashboard state
 - `/api/todo-state` — synced TODO state overrides
 - `/api/refresh` — regenerate all pages from the running Flask app
 - `/healthz` — simple app health check

@@ -358,9 +358,19 @@ def _parse_summary_items(path: Path) -> list[dict[str, Any]]:
 def sync_todo_items(path: Path = SUMMARY_FILE) -> int:
     items = _parse_summary_items(path)
     count = 0
-    source_file = str(path)
+    item_keys = [
+        _hash_key(item.get("section", ""), item.get("text", ""), str(item.get("sort_order", 0)))
+        for item in items
+    ]
     with _connect() as conn:
-        conn.execute("DELETE FROM todo_items WHERE source_file = ?", (source_file,))
+        if item_keys:
+            placeholders = ", ".join("?" for _ in item_keys)
+            conn.execute(
+                f"DELETE FROM todo_items WHERE source_file = ? OR item_key IN ({placeholders})",
+                (str(path), *item_keys),
+            )
+        else:
+            conn.execute("DELETE FROM todo_items WHERE source_file = ?", (str(path),))
         for item in items:
             item_key = _hash_key(item.get("section", ""), item.get("text", ""), str(item.get("sort_order", 0)))
             payload = dict(item)
@@ -377,7 +387,7 @@ def sync_todo_items(path: Path = SUMMARY_FILE) -> int:
                     item.get("sort_order", 0),
                     item.get("text"),
                     item.get("notes"),
-                    source_file,
+                    str(path),
                     json.dumps(payload, ensure_ascii=False),
                 ),
             )

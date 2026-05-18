@@ -9,7 +9,7 @@ from pathlib import Path
 from flask import Flask, abort, jsonify, redirect, request, send_from_directory
 
 from trading_bot.dashboards.dashboard_backend import dashboard_payload
-from trading_bot.dashboards.data_store import load_todo_state_overrides, save_todo_state
+from trading_bot.dashboards.data_store import load_todo_items, load_todo_state_overrides, save_todo_state, sync_all_if_needed, todo_stats
 from trading_bot.dashboards.spot_dashboard import MANAGER_FILE, fetch_prices, load_cron_runs, load_json, load_spot_data
 
 REPO_ROOT = Path(__file__).resolve().parent
@@ -37,6 +37,22 @@ BUILD_SCRIPTS = [
     "glossary.py",
     "todo.py",
 ]
+
+TODO_CATEGORY_COPY = {
+    "research": "This stage improves signal quality, ranking confidence, and idea selection before capital gets reassigned.",
+    "ops": "This stage hardens the runtime so the system behaves predictably across cron runs, restarts, and production incidents.",
+    "risk": "This stage adds explicit safety rails so promotion and capital changes stay constrained by measurable checks.",
+    "architecture": "This stage improves the plumbing behind the dashboard and manager so features stay durable instead of becoming one-off hacks.",
+    "product": "This stage improves operator usability so decisions are faster, clearer, and easier to audit from the dashboard surface.",
+    "done": "This roadmap stage is already completed and now acts as baseline capability for the next phase.",
+    "other": "This roadmap stage supports the broader project path and should be reviewed in the context of nearby stages.",
+}
+
+TODO_NEXT_ACTION_COPY = {
+    "open": "Treat this as upcoming work. Review the dependent outputs and implement the smallest production-safe next step.",
+    "done": "No action needed unless the implementation has drifted and the summary needs to be revalidated.",
+    "note": "Use this as live operating context rather than a build task. It should inform prioritization, not be toggled like feature work.",
+}
 
 app = Flask(__name__)
 
@@ -131,6 +147,45 @@ def api_dashboard_data():
 @app.get("/api/todo-state")
 def api_todo_state_get():
     return jsonify({"items": load_todo_state_overrides()})
+
+
+@app.get("/api/todo-data")
+def api_todo_data():
+    sync_all_if_needed(min_interval=5.0)
+    items = load_todo_items()
+    payload_items = []
+    for item in items:
+        payload = item.get("payload", {}) if isinstance(item.get("payload"), dict) else {}
+        category = str(payload.get("category", "other"))
+        status = str(item.get("status", "open"))
+        stage_number = int(item.get("sort_order", 0)) + 1
+        detail = (
+            f"Stage #{stage_number}: {str(item.get('text', '')).strip()} "
+            f"{TODO_CATEGORY_COPY.get(category, TODO_CATEGORY_COPY['other'])} "
+            f"{TODO_NEXT_ACTION_COPY.get(status, TODO_NEXT_ACTION_COPY['open'])}"
+        )
+        payload_items.append(
+            {
+                "item_key": str(item.get("item_key", "")),
+                "stage_number": stage_number,
+                "sort_order": int(item.get("sort_order", 0)),
+                "text": str(item.get("text", "")).strip(),
+                "notes": str(item.get("notes", "") or "").strip(),
+                "status": status,
+                "base_status": str(item.get("base_status", item.get("status", "open"))),
+                "section": str(item.get("section", "")),
+                "category": category,
+                "source_file": Path(str(item.get("source_file") or "")).name or "dashboard.sqlite",
+                "detail": detail,
+                "status_label": {
+                    "done": "Completed",
+                    "open": "Upcoming",
+                    "note": "Live note",
+                }.get(status, status.title()),
+                "can_toggle": str(item.get("base_status", item.get("status", "open"))) == "open",
+            }
+        )
+    return jsonify({"stats": todo_stats(items), "items": payload_items})
 
 
 @app.post("/api/todo-state")
