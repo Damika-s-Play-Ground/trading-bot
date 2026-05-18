@@ -16,7 +16,6 @@ createApp({
       equityRangeStart: '',
       equityRangeEnd: '',
       equityRangePreset: 'today',
-      equityZoom: 1,
       pollHandle: null,
     };
   },
@@ -57,12 +56,7 @@ createApp({
       });
     },
     visibleEquityPoints() {
-      const points = this.filteredEquityPoints;
-      if (!points.length) return [];
-      const zoom = Math.max(1, Number(this.equityZoom || 1));
-      if (zoom <= 1 || points.length <= 2) return points;
-      const windowSize = Math.max(6, Math.ceil(points.length / zoom));
-      return points.slice(Math.max(0, points.length - windowSize));
+      return this.filteredEquityPoints;
     },
     equityChart() {
       const points = this.visibleEquityPoints;
@@ -181,7 +175,6 @@ createApp({
         this.equityRangeStart = '';
         this.equityRangeEnd = '';
         this.equityRangePreset = 'today';
-        this.equityZoom = 1;
         return;
       }
       const today = this.todayDateValue();
@@ -335,14 +328,7 @@ createApp({
         this.equityRangeEnd = this.equityRangeStart;
       }
     },
-    zoomInEquity() {
-      this.equityZoom = Math.min(16, Number(this.equityZoom || 1) * 2);
-    },
-    zoomOutEquity() {
-      this.equityZoom = Math.max(1, Number(this.equityZoom || 1) / 2);
-    },
     resetEquityView() {
-      this.equityZoom = 1;
       this.setEquityPreset('today');
     },
     equityHoverPoint(point) {
@@ -412,7 +398,7 @@ createApp({
     <div class="page-header">
       <div>
         <h1 class="page-title">📊 Multi-Bot Trading Dashboard</h1>
-        <p class="page-subtitle">Vue-powered Flask dashboard with live portfolio analytics, denser tables, richer bot drill-downs, and an upgraded interactive equity explorer.</p>
+        <p class="page-subtitle">Vue-powered Flask dashboard with live portfolio analytics, denser tables, richer bot drill-downs, and a simpler date-range equity explorer.</p>
       </div>
       <div class="header-actions">
         <button class="btn" @click="refreshPages" :disabled="refreshBusy">{{ refreshBusy ? 'Refreshing…' : 'Refresh generated pages' }}</button>
@@ -506,7 +492,7 @@ createApp({
           <div class="chart-head chart-head-stack">
             <div>
               <div class="chart-title">Equity curve explorer</div>
-              <div class="chart-subtitle">Date-range filtering, zoom controls, richer hover state, and more context from each performance snapshot</div>
+              <div class="chart-subtitle">Single date-range picker with today/all-history shortcuts and richer hover context from each performance snapshot</div>
             </div>
             <div class="chart-tooltip">{{ chartInsight() }}</div>
           </div>
@@ -523,11 +509,7 @@ createApp({
               </label>
               <button class="mini-btn" :class="{ active: equityRangePreset === 'today' }" @click="setEquityPreset('today')">Today</button>
               <button class="mini-btn" :class="{ active: equityRangePreset === 'all' }" @click="setEquityPreset('all')">All history</button>
-            </div>
-            <div class="toolbar-group">
-              <button class="mini-btn" @click="zoomOutEquity">− Zoom out</button>
               <button class="mini-btn" @click="resetEquityView">Reset</button>
-              <button class="mini-btn" @click="zoomInEquity">＋ Zoom in</button>
             </div>
           </div>
 
