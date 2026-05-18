@@ -123,8 +123,8 @@ output = {
     "generated": time.strftime("%Y-%m-%d %H:%M:%S UTC", time.gmtime()),
     "coins": all_data,
 }
-with open(DATA_FILE, "w") as f:
-    json.dump(output, f, indent=1)
+from trading_bot.core.state_store import save_json_path
+save_json_path(DATA_FILE, output)
 
 print(f"\n💾 Saved: {DATA_FILE}")
 print()

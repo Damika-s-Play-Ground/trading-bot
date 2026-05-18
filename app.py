@@ -9,6 +9,7 @@ from pathlib import Path
 
 from flask import Flask, abort, jsonify, redirect, render_template_string, request, send_from_directory
 
+from trading_bot.config.settings import APP_HOST, APP_PORT, BUILD_ON_START
 from trading_bot.dashboards.dashboard_backend import dashboard_payload
 from trading_bot.dashboards.data_store import (
     create_todo_item,
@@ -216,7 +217,7 @@ def api_todo_data():
                 "base_status": str(item.get("base_status", item.get("status", "open"))),
                 "section": str(item.get("section", "")),
                 "category": category,
-                "source_file": Path(str(item.get("source_file") or "")).name or "dashboard.sqlite",
+                "source_file": Path(str(item.get("source_file") or "")).name or "runtime_state.json",
                 "detail": detail,
                 "status_label": {
                     "done": "Completed",
@@ -327,9 +328,6 @@ def serve_page(page: str):
 
 
 if __name__ == "__main__":
-    build_on_start = os.getenv("BUILD_ON_START", "1") == "1"
-    if build_on_start:
+    if BUILD_ON_START:
         build_all_pages()
-    host = os.getenv("HOST", "127.0.0.1")
-    port = int(os.getenv("PORT", "8008"))
-    app.run(host=host, port=port, debug=False)
+    app.run(host=APP_HOST, port=APP_PORT, debug=False)

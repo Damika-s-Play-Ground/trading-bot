@@ -22,6 +22,7 @@ from trading_bot.core.bot_runtime import (
     new_buys_disabled,
     scale_trade_size,
 )
+from trading_bot.core.state_store import load_json_path, save_json_path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 BASE_DIR = REPO_ROOT
@@ -30,8 +31,7 @@ BASE_DIR = REPO_ROOT
 CONFIG_PATH = BASE_DIR / "config.json"
 PAPER_FILE = BASE_DIR / "paper_state.json"
 
-with open(CONFIG_PATH) as f:
-    config = json.load(f)
+config = load_json_path(CONFIG_PATH, {})
 
 coins = config["coins"]
 dca = config["dca"]
@@ -206,18 +206,15 @@ class PaperTrading:
         self.load()
 
     def load(self):
-        if PAPER_FILE.exists():
-            with open(PAPER_FILE) as f:
-                data = json.load(f)
-                self.initial_balance = data.get("initial_balance", self.initial_balance)
-                self.usdt = data.get("usdt", self.initial_balance)
-                self.positions = data.get("positions", {})
-                self.trade_log = data.get("trade_log", [])
-                self.daily_pnl = data.get("daily_pnl", 0)
-                self.peak_value = data.get("peak_value", self.initial_balance)
+        data = load_json_path(PAPER_FILE, {})
+        self.initial_balance = data.get("initial_balance", self.initial_balance)
+        self.usdt = data.get("usdt", self.initial_balance)
+        self.positions = data.get("positions", {})
+        self.trade_log = data.get("trade_log", [])
+        self.daily_pnl = data.get("daily_pnl", 0)
+        self.peak_value = data.get("peak_value", self.initial_balance)
 
     def save(self):
-        PAPER_FILE.parent.mkdir(parents=True, exist_ok=True)
         state = {
             "initial_balance": self.initial_balance,
             "usdt": self.usdt,
@@ -229,8 +226,7 @@ class PaperTrading:
         }
         if hasattr(self, "last_run"):
             state["last_run"] = self.last_run
-        with open(PAPER_FILE, "w") as f:
-            json.dump(state, f, indent=2)
+        save_json_path(PAPER_FILE, state)
 
     def total_value(self, prices):
         val = self.usdt

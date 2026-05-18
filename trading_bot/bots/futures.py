@@ -6,6 +6,8 @@ import json, urllib.request, time, math
 from pathlib import Path
 from datetime import datetime, timezone
 
+from trading_bot.core.state_store import load_json_path, save_json_path
+
 REPO_ROOT = Path(__file__).resolve().parents[2]
 BASE_DIR = REPO_ROOT
 PAPER_FILE = BASE_DIR / "paper_futures.json"
@@ -31,19 +33,16 @@ class PaperFutures:
         self.load()
     
     def load(self):
-        if PAPER_FILE.exists():
-            with open(PAPER_FILE) as f:
-                d = json.load(f)
-                self.margin = d.get("margin", self.initial)
-                self.positions = d.get("positions", {})
-                self.trade_log = d.get("trade_log", [])
-                self.peak_value = d.get("peak_value", self.initial)
+        d = load_json_path(PAPER_FILE, {})
+        self.margin = d.get("margin", self.initial)
+        self.positions = d.get("positions", {})
+        self.trade_log = d.get("trade_log", [])
+        self.peak_value = d.get("peak_value", self.initial)
     
     def save(self):
-        with open(PAPER_FILE, "w") as f:
-            json.dump({"margin": self.margin, "positions": self.positions,
-                "trade_log": self.trade_log[-100:], "peak_value": self.peak_value,
-                "updated": datetime.now(timezone.utc).isoformat()}, f, indent=2)
+        save_json_path(PAPER_FILE,{"margin": self.margin, "positions": self.positions,
+            "trade_log": self.trade_log[-100:], "peak_value": self.peak_value,
+            "updated": datetime.now(timezone.utc).isoformat()})
     
     def total_value(self, prices):
         val = self.margin

@@ -6,6 +6,7 @@ import json
 import urllib.request
 from pathlib import Path
 
+from trading_bot.core.state_store import load_json_path
 from trading_bot.dashboards.shared_ui import build_bar_chart
 from trading_bot.dashboards.spot_dashboard import build_shared_style, nav
 
@@ -29,13 +30,11 @@ positions = {}
 trade_log = []
 peak = 300.0
 
-if PAPER_FILE.exists():
-    with open(PAPER_FILE) as f:
-        d = json.load(f)
-        margin = d.get("margin", 300.0)
-        positions = d.get("positions", {})
-        trade_log = d.get("trade_log", [])
-        peak = d.get("peak_value", 300.0)
+d = load_json_path(PAPER_FILE, {})
+margin = d.get("margin", 300.0)
+positions = d.get("positions", {})
+trade_log = d.get("trade_log", [])
+peak = d.get("peak_value", 300.0)
 
 pos_rows = ""
 open_rows = []

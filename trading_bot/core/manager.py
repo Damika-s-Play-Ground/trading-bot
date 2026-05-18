@@ -18,6 +18,7 @@ from pathlib import Path
 
 from trading_bot.analysis.allocation_optimizer import build_snapshot as build_allocation_optimizer_snapshot
 from trading_bot.core.promotion_governance import build_promotion_report
+from trading_bot.core.state_store import load_json_path, save_json_path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 BASE_DIR = REPO_ROOT
@@ -111,19 +112,11 @@ def optimizer_multiplier(bot_key, snapshot):
 def load_json(path, default=None):
     if default is None:
         default = {}
-    if not path.exists():
-        return default
-    try:
-        with open(path) as f:
-            return json.load(f)
-    except Exception:
-        return default
+    return load_json_path(path, default)
 
 
 def save_json(path, data):
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with open(path, "w") as f:
-        json.dump(data, f, indent=2)
+    save_json_path(path, data)
 
 
 def detect_regime():

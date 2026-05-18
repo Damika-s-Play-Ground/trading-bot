@@ -18,6 +18,7 @@ from trading_bot.core.bot_runtime import (
     new_buys_disabled,
     scale_trade_size,
 )
+from trading_bot.core.state_store import load_json_path, save_json_path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 BASE_DIR = REPO_ROOT
@@ -43,9 +44,7 @@ CONFIG = {
 }
 
 # Load/save config
-if CONFIG_FILE.exists():
-    with open(CONFIG_FILE) as f:
-        CONFIG.update(json.load(f))
+CONFIG.update(load_json_path(CONFIG_FILE, {}))
 
 CONFIG["initial_balance"] = get_target_capital(CONFIG["initial_balance"])
 
@@ -94,24 +93,21 @@ class PaperTrading:
         self.load()
     
     def load(self):
-        if PAPER_FILE.exists():
-            with open(PAPER_FILE) as f:
-                d = json.load(f)
-                self.initial = d.get("initial", self.initial)
-                self.usdt = d.get("usdt", self.initial)
-                self.positions = d.get("positions", {})
-                self.trade_log = d.get("trade_log", [])
-                self.peak_value = d.get("peak_value", self.initial)
+        d = load_json_path(PAPER_FILE, {})
+        self.initial = d.get("initial", self.initial)
+        self.usdt = d.get("usdt", self.initial)
+        self.positions = d.get("positions", {})
+        self.trade_log = d.get("trade_log", [])
+        self.peak_value = d.get("peak_value", self.initial)
     
     def save(self):
-        with open(PAPER_FILE, "w") as f:
-            json.dump({
-                "initial": self.initial,
-                "usdt": self.usdt, "positions": self.positions,
-                "trade_log": self.trade_log[-100:],
-                "peak_value": self.peak_value,
-                "updated": datetime.now(timezone.utc).isoformat(),
-            }, f, indent=2)
+        save_json_path(PAPER_FILE, {
+            "initial": self.initial,
+            "usdt": self.usdt, "positions": self.positions,
+            "trade_log": self.trade_log[-100:],
+            "peak_value": self.peak_value,
+            "updated": datetime.now(timezone.utc).isoformat(),
+        })
     
     def total_value(self, prices):
         val = self.usdt

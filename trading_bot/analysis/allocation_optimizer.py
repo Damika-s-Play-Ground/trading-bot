@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import json
 from collections import defaultdict
+
+from trading_bot.core.state_store import load_json_path, save_json_path
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -14,17 +16,11 @@ BOT_SEQUENCE = ["dca", "trend", "grid", "momentum", "deep_mr"]
 
 
 def _load_json(path: Path, default: Any) -> Any:
-    try:
-        with open(path) as fh:
-            return json.load(fh)
-    except Exception:
-        return default
+    return load_json_path(path, default)
 
 
 def _save_json(path: Path, payload: Any) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with open(path, "w") as fh:
-        json.dump(payload, fh, indent=2)
+    save_json_path(path, payload)
 
 
 def _safe_float(value: Any, default: float = 0.0) -> float:

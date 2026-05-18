@@ -223,8 +223,8 @@ if current:
     print(f"  {'Sharpe':<20} | {c['sharpe']:>10.3f} | {best['sharpe']:>10.3f} | {best['sharpe']-c['sharpe']:>+9.3f}")
 
 # Save results
-with open("/Users/damikaanupama/trading-bot/optimizer_results.json", "w") as f:
-    json.dump({"best": best, "top_15": results[:15], "all_count": len(results)}, f, indent=2)
+from trading_bot.core.state_store import save_json_path
+save_json_path("/Users/damikaanupama/trading-bot/optimizer_results.json", {"best": best, "top_15": results[:15], "all_count": len(results)})
 
 print(f"\n💾 Results saved to ~/trading-bot/optimizer_results.json")
 print(f"✅ Optimizer complete! Tested {len(results)} valid combinations.")

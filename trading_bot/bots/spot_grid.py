@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any
 
 from trading_bot.core.bot_runtime import get_blocked_coins, get_target_capital, new_buys_disabled
+from trading_bot.core.state_store import load_json_path, save_json_path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 BASE_DIR = REPO_ROOT
@@ -40,10 +41,7 @@ CONFIG["initial_balance"] = get_target_capital(CONFIG["initial_balance"])
 
 
 def _load_json(path: Path, default: Any) -> Any:
-    try:
-        return json.loads(path.read_text())
-    except Exception:
-        return default
+    return load_json_path(path, default)
 
 
 def _now_iso() -> str:
@@ -97,10 +95,7 @@ class PaperGrid:
         self.load()
 
     def load(self) -> None:
-        if not PAPER_FILE.exists():
-            return
-        with open(PAPER_FILE) as f:
-            data = json.load(f)
+        data = load_json_path(PAPER_FILE, {})
         self.initial = data.get("initial", self.initial)
         self.usdt = data.get("usdt", self.initial)
         raw_positions = data.get("positions", {}) if isinstance(data.get("positions"), dict) else {}
@@ -117,19 +112,14 @@ class PaperGrid:
             self._coin_state(coin)
 
     def save(self) -> None:
-        with open(PAPER_FILE, "w") as f:
-            json.dump(
-                {
-                    "initial": self.initial,
-                    "usdt": self.usdt,
-                    "positions": self.positions,
-                    "trade_log": self.trade_log[-200:],
-                    "meta": self.meta,
-                    "updated": _now_iso(),
-                },
-                f,
-                indent=2,
-            )
+        save_json_path(PAPER_FILE, {
+            "initial": self.initial,
+            "usdt": self.usdt,
+            "positions": self.positions,
+            "trade_log": self.trade_log[-200:],
+            "meta": self.meta,
+            "updated": _now_iso(),
+        })
 
     def _coin_state(self, coin: str) -> dict[str, Any]:
         coins = self.meta.setdefault("coins", {})

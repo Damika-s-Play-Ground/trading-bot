@@ -11,6 +11,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from trading_bot.core.state_store import load_json_path, save_json_path
 from trading_bot.dashboards.data_store import load_research_items, sync_all_if_needed
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -36,17 +37,11 @@ NEGATIVE_TERMS = {
 
 
 def _load_json(path: Path, default: Any) -> Any:
-    try:
-        with open(path) as fh:
-            return json.load(fh)
-    except Exception:
-        return default
+    return load_json_path(path, default)
 
 
 def _save_json(path: Path, payload: Any) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with open(path, "w") as fh:
-        json.dump(payload, fh, indent=2)
+    save_json_path(path, payload)
 
 
 def _safe_float(value: Any, default: float = 0.0) -> float:

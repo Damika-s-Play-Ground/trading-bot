@@ -13,6 +13,7 @@ from datetime import datetime, timezone
 from html import escape as _escape_html
 from pathlib import Path
 
+from trading_bot.core.state_store import load_json_path
 from trading_bot.dashboards.data_store import load_performance_runs, sync_all
 from trading_bot.dashboards.shared_ui import build_bar_chart, build_donut_chart, build_line_chart_svg
 
@@ -62,11 +63,7 @@ CRON_JOBS = {
 
 
 def load_json(path, default):
-    try:
-        with open(path) as f:
-            return json.load(f)
-    except Exception:
-        return default
+    return load_json_path(path, default)
 
 
 def fetch_prices():
