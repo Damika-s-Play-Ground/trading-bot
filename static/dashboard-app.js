@@ -1,5 +1,5 @@
 const { createApp } = Vue;
-const DASHBOARD_CACHE_KEY = 'dashboard_payload_v3';
+const DASHBOARD_CACHE_KEY = 'dashboard_payload_v4';
 
 createApp({
   data() {
@@ -148,14 +148,30 @@ createApp({
     },
   },
   methods: {
+    hydratePayload(nextPayload) {
+      if (!nextPayload) return false;
+      this.payload = nextPayload;
+      this.initializeEquityControls();
+      this.loading = false;
+      return true;
+    },
+    isPayloadFreshEnough(payload) {
+      return Boolean(payload?.analytics?.bot_contribution && payload?.analytics?.trade_attribution && payload?.charts?.equity);
+    },
     restoreCachedPayload() {
       try {
         const cached = JSON.parse(window.localStorage.getItem(DASHBOARD_CACHE_KEY) || 'null');
-        if (!cached || !cached.payload) return false;
-        this.payload = cached.payload;
-        this.initializeEquityControls();
-        this.loading = false;
-        return true;
+        if (!cached || !this.isPayloadFreshEnough(cached.payload)) return false;
+        return this.hydratePayload(cached.payload);
+      } catch (error) {
+        return false;
+      }
+    },
+    restoreBootstrapPayload() {
+      try {
+        const bootstrapped = window.__DASHBOARD_BOOTSTRAP__;
+        if (!this.isPayloadFreshEnough(bootstrapped)) return false;
+        return this.hydratePayload(bootstrapped);
       } catch (error) {
         return false;
       }
@@ -181,8 +197,7 @@ createApp({
       try {
         const response = await fetch('/api/dashboard-data', { cache: 'no-store' });
         if (!response.ok) throw new Error(`dashboard data request failed (${response.status})`);
-        this.payload = await response.json();
-        this.initializeEquityControls();
+        this.hydratePayload(await response.json());
         window.localStorage.setItem(DASHBOARD_CACHE_KEY, JSON.stringify({ ts: Date.now(), payload: this.payload }));
       } catch (error) {
         console.error(error);
@@ -368,7 +383,7 @@ createApp({
     },
   },
   mounted() {
-    this.restoreCachedPayload();
+    this.restoreBootstrapPayload() || this.restoreCachedPayload();
     this.loadDashboard({ showLoading: !this.payload });
     this.pollHandle = window.setInterval(() => this.loadDashboard({ showLoading: false }), 30000);
     window.addEventListener('keydown', this.onKeydown);
@@ -600,6 +615,9 @@ createApp({
                     <td :class="row.realized_recent >= 0 ? 'green' : 'red'">{{ formatMoney(row.realized_recent) }}</td>
                     <td><span class="table-pill outline">{{ humanizeToken(row.optimizer_bias) }} · x{{ Number(row.combined_multiplier || 1).toFixed(2) }}</span></td>
                   </tr>
+                  <tr v-if="!botAttributionRows.length">
+                    <td colspan="6" class="empty-state">No bot attribution rows available yet.</td>
+                  </tr>
                 </tbody>
               </table>
             </div>
@@ -627,6 +645,9 @@ createApp({
                     <td>{{ row.sell_count }}</td>
                     <td>{{ formatMoney(row.notional) }}</td>
                     <td :class="row.pnl >= 0 ? 'green' : 'red'">{{ formatMoney(row.pnl) }}</td>
+                  </tr>
+                  <tr v-if="!tradeAttributionRows.length">
+                    <td colspan="6" class="empty-state">No recent attributed trades in the current journal window.</td>
                   </tr>
                 </tbody>
               </table>

@@ -177,7 +177,7 @@ def build_todo_page() -> None:
         .progress-donut {{ width:220px; height:220px; padding:18px; display:grid; place-items:center; position:relative; margin:0 auto; }}
         .progress-donut::after {{ content:''; position:absolute; inset:34px; border-radius:50%; background:#0f172a; box-shadow:inset 0 0 0 1px #334155; }}
         .progress-svg {{ width:220px; height:220px; overflow:visible; display:block; }}
-        .progress-arc {{ fill:none; stroke-width:18; stroke-linecap:round; transform:rotate(-90deg); transform-origin:50% 50%; transition:stroke-dasharray .28s ease, stroke-dashoffset .28s ease; }}
+        .progress-arc {{ fill:none; stroke-width:18; stroke-linecap:butt; transform:rotate(-90deg); transform-origin:50% 50%; transition:stroke-dasharray .28s ease, stroke-dashoffset .28s ease; }}
         .progress-center {{ position:absolute; inset:0; display:grid; place-items:center; z-index:1; text-align:center; pointer-events:none; }}
         .progress-center strong {{ display:block; font-size:24px; line-height:1.1; color:#e2e8f0; }}
         .progress-center span {{ display:block; margin-top:4px; color:#94a3b8; font-size:11px; text-transform:uppercase; letter-spacing:.7px; }}
@@ -350,15 +350,22 @@ def build_todo_page() -> None:
             {{ id: 'progress-arc-note', value: stats.notes }},
         ];
         const total = Math.max(stats.total, 1);
+        const segmentGap = 3;
         let cursor = 0;
         segments.forEach((segment) => {{
             const circle = document.getElementById(segment.id);
             if (!circle) return;
-            const dash = Math.max((segment.value / total) * circumference, segment.value > 0 ? 0.0001 : 0);
+            const rawDash = (segment.value / total) * circumference;
+            if (segment.value <= 0 || rawDash <= 0) {{
+                circle.setAttribute('stroke-dasharray', `0 ${{circumference}}`);
+                circle.setAttribute('stroke-dashoffset', '0');
+                return;
+            }}
+            const dash = Math.max(rawDash - segmentGap, 0.0001);
             const gap = Math.max(circumference - dash, 0);
             circle.setAttribute('stroke-dasharray', `${{dash}} ${{gap}}`);
             circle.setAttribute('stroke-dashoffset', `${{-cursor}}`);
-            cursor += dash;
+            cursor += rawDash;
         }});
         const setText = (id, value) => {{ const el = document.getElementById(id); if (el) el.textContent = value; }};
         setText('progress-center-value', `${{Math.round(stats.completion_pct)}}%`);

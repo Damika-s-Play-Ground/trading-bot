@@ -1,12 +1,13 @@
 #!/Users/damikaanupama/trading-bot/venv/bin/python3.13
 from __future__ import annotations
 
+import json
 import os
 import subprocess
 import sys
 from pathlib import Path
 
-from flask import Flask, abort, jsonify, redirect, request, send_from_directory
+from flask import Flask, abort, jsonify, redirect, render_template_string, request, send_from_directory
 
 from trading_bot.dashboards.dashboard_backend import dashboard_payload
 from trading_bot.dashboards.data_store import (
@@ -257,6 +258,30 @@ def api_refresh():
     results = build_all_pages()
     ok = all(item["ok"] for item in results)
     return jsonify({"ok": ok, "results": results})
+
+
+@app.get("/dashboard")
+def serve_dashboard():
+    payload = json.dumps(dashboard_payload())
+    return render_template_string(
+        """<!DOCTYPE html>
+<html lang=\"en\">
+<head>
+  <meta charset=\"UTF-8\" />
+  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\" />
+  <title>Trading Dashboard</title>
+  <link rel=\"stylesheet\" href=\"/static/dashboard.css\" />
+</head>
+<body>
+  <div id=\"app\">Loading dashboard…</div>
+  <script>window.__DASHBOARD_BOOTSTRAP__ = {{ payload | safe }};</script>
+  <script src=\"/static/vendor/vue.global.prod.js\"></script>
+  <script src=\"/static/dashboard-app.js\"></script>
+</body>
+</html>
+        """,
+        payload=payload,
+    )
 
 
 @app.get("/api/refresh")
