@@ -376,6 +376,8 @@ def build_todo_page() -> None:
         setText('stat-open', String(stats.open));
         setText('stat-notes', String(stats.notes));
         setText('progress-text', `${{stats.done}}/${{stats.total}} complete`);
+        const progressFill = document.getElementById('progress-fill');
+        if (progressFill) progressFill.style.width = `${{Math.max(0, Math.min(stats.completion_pct, 100)).toFixed(1)}}%`;
         updateProgressDonut(stats);
         const focus = sortedItems(state.allItems).find((item) => item.status === 'open');
         setText('focus-text', focus ? focus.text : 'Nothing queued — the current roadmap is clear.');
@@ -733,7 +735,7 @@ def build_todo_page() -> None:
                     <div class="modal-kv"><div class="k">State persistence</div><div class="v" id="modal-db"></div></div>
                 </div>
                 <div class="modal-actions">
-                    <div class="modal-footnote">Completion changes are stored in the dashboard SQLite flow and also cached locally for file-open fallback.</div>
+                    <div class="modal-footnote">Completion changes are stored in the dashboard SQLite flow so the roadmap stays consistent across refreshes.</div>
                     <div style="display:flex; gap:10px; flex-wrap:wrap;">
                         <button class="action-btn action-secondary" type="button" onclick="closeModal()">Close</button>
                         <button class="action-btn action-primary" id="modal-toggle-btn" type="button">Mark as completed</button>
