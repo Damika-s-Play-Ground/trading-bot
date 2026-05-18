@@ -152,6 +152,15 @@ button, input { font: inherit; }
 .bot-expand { margin-top: 15px; padding-top: 15px; border-top: 1px solid var(--line); display: grid; gap: 14px; }
 .expand-grid { display: grid; grid-template-columns: 1.1fr 1fr; gap: 14px; }
 .attribution-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.attribution-layout { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(320px, .95fr); gap: 14px; align-items: start; }
+.attribution-column { display: grid; gap: 14px; }
+.attribution-card-list { display: grid; gap: 10px; }
+.attribution-card { padding: 12px; border-radius: 14px; background: rgba(2,6,23,.56); border: 1px solid #1d2d40; }
+.attribution-row-top { display: flex; justify-content: space-between; gap: 10px; align-items: flex-start; flex-wrap: wrap; }
+.attribution-row-name { font-size: 13px; font-weight: 800; }
+.attribution-row-sub { color: var(--muted); font-size: 11px; margin-top: 4px; line-height: 1.5; }
+.attribution-chip-row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.attribution-chip { display: inline-flex; align-items: center; gap: 6px; padding: 6px 9px; border-radius: 999px; border: 1px solid var(--line-2); background: rgba(15,23,42,.82); color: #cbd5e1; font-size: 11px; }
 .compact-shell { overflow-x: auto; }
 .compact-shell .data-table { min-width: 0; }
 .compact-table thead th { padding: 11px 12px; }
@@ -175,6 +184,7 @@ button, input { font: inherit; }
 @media (max-width: 1180px) {
   .top-grid { grid-template-columns: repeat(2, minmax(0,1fr)); }
   .expand-grid { grid-template-columns: 1fr; }
+  .attribution-layout { grid-template-columns: 1fr; }
   .modal-summary-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 @media (max-width: 900px) {
@@ -195,5 +205,6 @@ button, input { font: inherit; }
   .equity-stats-grid, .metric-grid, .modal-summary-grid { grid-template-columns: 1fr; }
   .position-row { grid-template-columns: 1fr; }
   .position-value { text-align: left; }
+  .attribution-chip-row { flex-direction: column; align-items: stretch; }
   .data-table { min-width: 960px; }
 }

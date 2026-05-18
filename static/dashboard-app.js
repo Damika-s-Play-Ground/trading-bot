@@ -1,5 +1,5 @@
 const { createApp } = Vue;
-const DASHBOARD_CACHE_KEY = 'dashboard_payload_v4';
+const DASHBOARD_CACHE_KEY = 'dashboard_payload_v5';
 
 createApp({
   data() {
@@ -195,7 +195,7 @@ createApp({
       if (showLoading) this.loading = true;
       this.error = '';
       try {
-        const response = await fetch('/api/dashboard-data', { cache: 'no-store' });
+        const response = await fetch(`/api/dashboard-data?ts=${Date.now()}`, { cache: 'no-store' });
         if (!response.ok) throw new Error(`dashboard data request failed (${response.status})`);
         this.hydratePayload(await response.json());
         window.localStorage.setItem(DASHBOARD_CACHE_KEY, JSON.stringify({ ts: Date.now(), payload: this.payload }));
@@ -588,69 +588,56 @@ createApp({
         <div class="section-head">
           <div>
             <h2>🧭 Attribution review</h2>
-            <div class="section-note">Clearer attribution across bot capital, recent trade outcomes, and regime transitions so decision review is faster.</div>
+            <div class="section-note">Bot, trade, and regime attribution now render as visible review cards first so the section stays readable without horizontal scrolling.</div>
+          </div>
+          <div class="todo-strip">
+            <span class="todo-pill">{{ botAttributionRows.length }} bot rows</span>
+            <span class="todo-pill">{{ tradeAttributionRows.length }} trade rows</span>
+            <span class="todo-pill">{{ regimeReview.samples || 0 }} regime samples</span>
           </div>
         </div>
-        <div class="expand-grid attribution-grid">
-          <div class="mini-panel">
-            <div class="mini-title">Bot contribution</div>
-            <div class="table-shell compact-shell">
-              <table class="data-table compact-table">
-                <thead>
-                  <tr>
-                    <th>Bot</th>
-                    <th>Share</th>
-                    <th>Value</th>
-                    <th>Unrealized</th>
-                    <th>Realized</th>
-                    <th>Bias</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr v-for="row in botAttributionRows" :key="row.key">
-                    <td>{{ row.name }}</td>
-                    <td>{{ shortPct(row.portfolio_pct) }}</td>
-                    <td>{{ formatMoney(row.value) }}</td>
-                    <td :class="row.unrealized_pnl >= 0 ? 'green' : 'red'">{{ formatMoney(row.unrealized_pnl) }}</td>
-                    <td :class="row.realized_recent >= 0 ? 'green' : 'red'">{{ formatMoney(row.realized_recent) }}</td>
-                    <td><span class="table-pill outline">{{ humanizeToken(row.optimizer_bias) }} · x{{ Number(row.combined_multiplier || 1).toFixed(2) }}</span></td>
-                  </tr>
-                  <tr v-if="!botAttributionRows.length">
-                    <td colspan="6" class="empty-state">No bot attribution rows available yet.</td>
-                  </tr>
-                </tbody>
-              </table>
+        <div class="attribution-layout">
+          <div class="attribution-column">
+            <div class="mini-panel">
+              <div class="mini-title">Bot contribution</div>
+              <div v-if="botAttributionRows.length" class="attribution-card-list">
+                <div class="attribution-card" v-for="row in botAttributionRows" :key="row.key">
+                  <div class="attribution-row-top">
+                    <div>
+                      <div class="attribution-row-name">{{ row.name }}</div>
+                      <div class="attribution-row-sub">{{ shortPct(row.portfolio_pct) }} of portfolio · {{ formatMoney(row.value) }}</div>
+                    </div>
+                    <span class="table-pill outline">{{ humanizeToken(row.optimizer_bias) }} · x{{ Number(row.combined_multiplier || 1).toFixed(2) }}</span>
+                  </div>
+                  <div class="attribution-chip-row">
+                    <span class="attribution-chip">Unrealized <strong :class="row.unrealized_pnl >= 0 ? 'green' : 'red'">{{ formatMoney(row.unrealized_pnl) }}</strong></span>
+                    <span class="attribution-chip">Realized <strong :class="row.realized_recent >= 0 ? 'green' : 'red'">{{ formatMoney(row.realized_recent) }}</strong></span>
+                    <span class="attribution-chip">Drawdown {{ shortPct(row.drawdown_pct || 0, 2) }}</span>
+                  </div>
+                </div>
+              </div>
+              <div v-else class="empty-state">No bot attribution rows available yet.</div>
             </div>
-          </div>
 
-          <div class="mini-panel">
-            <div class="mini-title">Recent trade attribution</div>
-            <div class="table-shell compact-shell">
-              <table class="data-table compact-table">
-                <thead>
-                  <tr>
-                    <th>Bot</th>
-                    <th>Trades</th>
-                    <th>Buys</th>
-                    <th>Sells</th>
-                    <th>Notional</th>
-                    <th>PnL</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr v-for="row in tradeAttributionRows" :key="row.bot">
-                    <td>{{ row.bot }}</td>
-                    <td>{{ row.count }}</td>
-                    <td>{{ row.buy_count }}</td>
-                    <td>{{ row.sell_count }}</td>
-                    <td>{{ formatMoney(row.notional) }}</td>
-                    <td :class="row.pnl >= 0 ? 'green' : 'red'">{{ formatMoney(row.pnl) }}</td>
-                  </tr>
-                  <tr v-if="!tradeAttributionRows.length">
-                    <td colspan="6" class="empty-state">No recent attributed trades in the current journal window.</td>
-                  </tr>
-                </tbody>
-              </table>
+            <div class="mini-panel">
+              <div class="mini-title">Recent trade attribution</div>
+              <div v-if="tradeAttributionRows.length" class="attribution-card-list">
+                <div class="attribution-card" v-for="row in tradeAttributionRows" :key="row.bot">
+                  <div class="attribution-row-top">
+                    <div>
+                      <div class="attribution-row-name">{{ row.bot }}</div>
+                      <div class="attribution-row-sub">{{ row.count }} recent trades · {{ formatMoney(row.notional) }} notional</div>
+                    </div>
+                    <div :class="row.pnl >= 0 ? 'green' : 'red'" style="font-weight:800;">{{ formatMoney(row.pnl) }}</div>
+                  </div>
+                  <div class="attribution-chip-row">
+                    <span class="attribution-chip">Buys {{ row.buy_count }}</span>
+                    <span class="attribution-chip">Sells {{ row.sell_count }}</span>
+                    <span class="attribution-chip">Net PnL <strong :class="row.pnl >= 0 ? 'green' : 'red'">{{ formatMoney(row.pnl) }}</strong></span>
+                  </div>
+                </div>
+              </div>
+              <div v-else class="empty-state">No recent attributed trades in the current journal window.</div>
             </div>
           </div>
 
