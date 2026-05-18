@@ -18,6 +18,7 @@ Concise multi-strategy paper-trading repo for spot + futures experiments.
 - Equity curve readability improved with cleaner axes, hover states, and gradient fill.
 - TODO completion state now persists in the dashboard SQLite store instead of only browser localStorage.
 - TODO page now renders a DB-backed roadmap timeline with modal drill-downs, de-duplicated summary rows, and clean upcoming-vs-completed ordering.
+- Research queue now syncs into SQLite with analyzer scores, promotion labels, topic tags, suggested actions, and a `/api/research-data` payload.
 - Cron health now warns on missed cadence, not just stale status.
 - Glossary updated to explain new dashboard/store/cron concepts.
 - Candidate scoring, allocation optimizer snapshots, promotion gates, and attribution review are now part of the live paper-trading loop.
@@ -115,6 +116,7 @@ open -a "Google Chrome" http://127.0.0.1:8008/dashboard
 - `/api/spot-summary` — compact spot summary JSON
 - `/api/todo-data` — roadmap timeline data pulled from SQLite-backed dashboard state
 - `/api/todo-state` — synced TODO state overrides
+- `/api/research-data` — structured research feed with analyzer scores and promotion labels
 - `/api/refresh` — regenerate all pages from the running Flask app
 - `/healthz` — simple app health check
 

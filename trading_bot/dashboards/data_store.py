@@ -28,6 +28,58 @@ _SYNC_CACHE = {
     "checked_at": 0.0,
 }
 
+RESEARCH_REVIEW_ORDER = {
+    "promoted": 0,
+    "shortlisted": 1,
+    "raw": 2,
+    "rejected": 3,
+}
+
+RESEARCH_LOW_SIGNAL_TERMS = {
+    "mev",
+    "sandwich",
+    "exploit",
+    "cheat",
+    "farm",
+    "game",
+    "solana",
+    "copytrading",
+    "sports",
+}
+
+RESEARCH_RELEVANCE_TERMS = {
+    "binance",
+    "ccxt",
+    "spot",
+    "risk",
+    "grid",
+    "momentum",
+    "mean reversion",
+    "backtest",
+    "paper trading",
+    "allocation",
+    "portfolio",
+    "slippage",
+    "order book",
+    "atr",
+    "trailing stop",
+}
+
+RESEARCH_NOVELTY_TERMS = {
+    "order book",
+    "slippage",
+    "depth",
+    "hysteresis",
+    "atr",
+    "regime",
+    "allocation",
+    "portfolio",
+    "optimizer",
+    "promotion",
+    "gates",
+    "risk control",
+}
+
 
 def _file_signature(path: Path) -> tuple[float, int]:
     try:
@@ -44,6 +96,13 @@ def _connect() -> sqlite3.Connection:
     conn.execute("PRAGMA journal_mode=WAL;")
     conn.execute("PRAGMA synchronous=NORMAL;")
     return conn
+
+
+def _ensure_columns(conn: sqlite3.Connection, table: str, columns: dict[str, str]) -> None:
+    existing = {str(row[1]) for row in conn.execute(f"PRAGMA table_info({table})").fetchall()}
+    for name, definition in columns.items():
+        if name not in existing:
+            conn.execute(f"ALTER TABLE {table} ADD COLUMN {name} {definition}")
 
 
 def ensure_schema() -> None:
@@ -110,6 +169,25 @@ def ensure_schema() -> None:
                 source TEXT DEFAULT 'dashboard'
             );
             """
+        )
+        _ensure_columns(
+            conn,
+            "research_items",
+            {
+                "source_type": "TEXT",
+                "source_name": "TEXT",
+                "discovered_at": "TEXT",
+                "fingerprint": "TEXT",
+                "topic_tags": "TEXT",
+                "quality_score": "REAL DEFAULT 0",
+                "relevance_score": "REAL DEFAULT 0",
+                "novelty_score": "REAL DEFAULT 0",
+                "applicability_score": "REAL DEFAULT 0",
+                "total_score": "REAL DEFAULT 0",
+                "review_status": "TEXT DEFAULT 'raw'",
+                "evidence_summary": "TEXT",
+                "suggested_action": "TEXT",
+            },
         )
 
 
@@ -258,6 +336,81 @@ def _parse_research_entries(text: str) -> list[dict[str, Any]]:
     return entries
 
 
+def _extract_source_name(title: str) -> str:
+    if '|' not in title:
+        return ''
+    tail = title.split('|', 1)[1].strip()
+    return tail.split('—', 1)[0].strip()
+
+
+def _parse_repo_metrics(results: str) -> tuple[float, float]:
+    star_match = re.search(r"(\d+(?:\.\d+)?)\s*★", results or "")
+    fork_match = re.search(r"(\d+(?:\.\d+)?)\s*fork", results or "", re.IGNORECASE)
+    stars = float(star_match.group(1)) if star_match else 0.0
+    forks = float(fork_match.group(1)) if fork_match else 0.0
+    return stars, forks
+
+
+def _research_metadata(entry: dict[str, Any], details: dict[str, str]) -> dict[str, Any]:
+    title = str(entry.get("title", ""))
+    platform = str(entry.get("platform", "Source"))
+    strategy = str(details.get("Strategy", ""))
+    results = str(details.get("Results", ""))
+    tools = str(details.get("Tools", ""))
+    takeaway = str(details.get("Key takeaway", details.get("Takeaway", "")))
+    url = str(details.get("URL", ""))
+    source_name = _extract_source_name(title)
+    source_type = "github" if "github" in title.lower() or "github.com" in url else platform.lower().replace('/', '-')
+    blob = " ".join([title, strategy, results, tools, takeaway, url]).lower()
+    stars, forks = _parse_repo_metrics(results)
+    low_signal_hits = sum(1 for term in RESEARCH_LOW_SIGNAL_TERMS if term in blob)
+    relevance_hits = sum(1 for term in RESEARCH_RELEVANCE_TERMS if term in blob)
+    novelty_hits = sum(1 for term in RESEARCH_NOVELTY_TERMS if term in blob)
+    quality_score = min(5.0, 1.2 + min(stars, 250.0) / 80.0 + min(forks, 120.0) / 60.0)
+    relevance_score = min(5.0, 0.8 + relevance_hits * 0.75)
+    novelty_score = min(5.0, 0.6 + novelty_hits * 0.8)
+    applicability_score = min(5.0, 1.0 + (1.4 if any(term in blob for term in ["binance", "ccxt", "spot"]) else 0.0) + (1.2 if any(term in blob for term in ["risk", "slippage", "order book", "atr", "regime", "allocation"]) else 0.0) - low_signal_hits * 0.9)
+    total_score = quality_score * 0.9 + relevance_score * 1.2 + novelty_score * 1.05 + applicability_score * 1.35
+    if low_signal_hits >= 2 or applicability_score < 1.1:
+        review_status = "rejected"
+    elif total_score >= 10.5 and applicability_score >= 2.1 and quality_score >= 4.0:
+        review_status = "promoted"
+    elif total_score >= 9.5 and applicability_score >= 1.8:
+        review_status = "shortlisted"
+    else:
+        review_status = "raw"
+    tags = []
+    for term in sorted(RESEARCH_RELEVANCE_TERMS | RESEARCH_NOVELTY_TERMS):
+        if term in blob and term not in tags:
+            tags.append(term)
+        if len(tags) >= 6:
+            break
+    if review_status == "promoted":
+        suggested_action = "Review this first against current manager logic and decide whether it should become a roadmap item or code change."
+    elif review_status == "shortlisted":
+        suggested_action = "Keep this on the shortlist and compare it against existing candidate-scoring and risk-control logic."
+    elif review_status == "rejected":
+        suggested_action = "Low fit for the current Binance spot roadmap; keep for reference only unless a new strategy branch needs it."
+    else:
+        suggested_action = "Raw input only — inspect if it adds something the current bot stack does not already cover."
+    evidence_summary = f"{source_type} · {int(stars)}★/{int(forks)} forks · relevance {relevance_score:.1f}/5 · applicability {applicability_score:.1f}/5"
+    return {
+        "source_type": source_type,
+        "source_name": source_name or platform,
+        "discovered_at": str(entry.get("date", "")),
+        "fingerprint": _hash_key(title, url, strategy, results),
+        "topic_tags": ", ".join(tags),
+        "quality_score": round(quality_score, 2),
+        "relevance_score": round(relevance_score, 2),
+        "novelty_score": round(novelty_score, 2),
+        "applicability_score": round(max(0.0, applicability_score), 2),
+        "total_score": round(total_score, 2),
+        "review_status": review_status,
+        "evidence_summary": evidence_summary,
+        "suggested_action": suggested_action,
+    }
+
+
 def sync_research_entries(path: Path = RESEARCH_FILE) -> int:
     if not path.exists():
         return 0
@@ -276,12 +429,17 @@ def sync_research_entries(path: Path = RESEARCH_FILE) -> int:
             conn.execute("DELETE FROM research_items")
         for entry in entries:
             details = entry.get("details", {}) if isinstance(entry.get("details"), dict) else {}
+            metadata = _research_metadata(entry, details)
             item_key = _hash_key(entry.get("date", ""), entry.get("title", ""))
             conn.execute(
                 """
                 INSERT OR REPLACE INTO research_items
-                (item_key, date, platform, title, author, strategy, results, tools, takeaway, url, raw)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                (
+                    item_key, date, platform, title, author, strategy, results, tools, takeaway, url, raw,
+                    source_type, source_name, discovered_at, fingerprint, topic_tags, quality_score, relevance_score,
+                    novelty_score, applicability_score, total_score, review_status, evidence_summary, suggested_action
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     item_key,
@@ -295,6 +453,19 @@ def sync_research_entries(path: Path = RESEARCH_FILE) -> int:
                     details.get("Key takeaway", details.get("Takeaway", "")),
                     details.get("URL", ""),
                     entry.get("raw", ""),
+                    metadata.get("source_type"),
+                    metadata.get("source_name"),
+                    metadata.get("discovered_at"),
+                    metadata.get("fingerprint"),
+                    metadata.get("topic_tags"),
+                    metadata.get("quality_score"),
+                    metadata.get("relevance_score"),
+                    metadata.get("novelty_score"),
+                    metadata.get("applicability_score"),
+                    metadata.get("total_score"),
+                    metadata.get("review_status"),
+                    metadata.get("evidence_summary"),
+                    metadata.get("suggested_action"),
                 ),
             )
             count += 1
@@ -475,9 +646,22 @@ def load_research_items(limit: int = 200) -> list[dict[str, Any]]:
     with _connect() as conn:
         rows = conn.execute(
             """
-            SELECT item_key, date, platform, title, author, strategy, results, tools, takeaway, url, raw
+            SELECT
+                item_key, date, platform, title, author, strategy, results, tools, takeaway, url, raw,
+                source_type, source_name, discovered_at, fingerprint, topic_tags, quality_score, relevance_score,
+                novelty_score, applicability_score, total_score, review_status, evidence_summary, suggested_action
             FROM research_items
-            ORDER BY COALESCE(date, '') DESC, title DESC
+            ORDER BY
+                CASE review_status
+                    WHEN 'promoted' THEN 0
+                    WHEN 'shortlisted' THEN 1
+                    WHEN 'raw' THEN 2
+                    WHEN 'rejected' THEN 3
+                    ELSE 4
+                END ASC,
+                COALESCE(total_score, 0) DESC,
+                COALESCE(date, '') DESC,
+                title DESC
             LIMIT ?
             """,
             (limit,),

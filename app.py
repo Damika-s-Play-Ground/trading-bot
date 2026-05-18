@@ -10,6 +10,7 @@ from flask import Flask, abort, jsonify, redirect, request, send_from_directory
 
 from trading_bot.dashboards.dashboard_backend import dashboard_payload
 from trading_bot.dashboards.data_store import (
+    load_research_items,
     load_research_state_overrides,
     load_todo_items,
     load_todo_state_overrides,
@@ -160,6 +161,32 @@ def api_todo_state_get():
 @app.get("/api/research-state")
 def api_research_state_get():
     return jsonify({"items": load_research_state_overrides()})
+
+
+@app.get("/api/research-data")
+def api_research_data():
+    sync_all_if_needed(min_interval=5.0)
+    items = load_research_items(limit=300)
+    review_counts: dict[str, int] = {"promoted": 0, "shortlisted": 0, "raw": 0, "rejected": 0}
+    platform_counts: dict[str, int] = {}
+    for item in items:
+        review_key = str(item.get("review_status", "raw") or "raw")
+        review_counts[review_key] = review_counts.get(review_key, 0) + 1
+        platform = str(item.get("platform", "Source") or "Source")
+        platform_counts[platform] = platform_counts.get(platform, 0) + 1
+    return jsonify(
+        {
+            "summary": {
+                "total": len(items),
+                "promoted": review_counts.get("promoted", 0),
+                "shortlisted": review_counts.get("shortlisted", 0),
+                "raw": review_counts.get("raw", 0),
+                "rejected": review_counts.get("rejected", 0),
+                "platform_counts": platform_counts,
+            },
+            "items": items,
+        }
+    )
 
 
 @app.get("/api/todo-data")
