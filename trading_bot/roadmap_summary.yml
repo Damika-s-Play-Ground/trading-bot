@@ -1,0 +1,29 @@
+summary: |
+  High-level summary
+
+  The project is already past the research-only stage.
+  It is now in the paper-trading + operations + product-hardening stage.
+
+  What’s done:
+  - Strategy and risk foundation defined for a multi-bot architecture
+  - Hybrid stack chosen: research/backtesting workflows plus custom Python execution
+  - Multi-bot spot manager implemented with regime-aware allocation and capital controls
+  - Futures paper bot implemented as a separate risk-first view
+  - Local dashboard suite implemented for spot, futures, research, todo, glossary, and cron
+  - Hermes cron automation is running for paper trading and research scraping
+  - Repo structure, docs, wrappers, and GitHub sync are in place
+  - Build the unified candidate scorer that turns research and live bot metrics into one ranking signal
+
+  What’s still missing:
+  - Wire the optimizer outputs into live manager allocation decisions instead of keeping them mostly offline
+  - Harden promotion rules from paper trading to controlled live trading with explicit safety gates
+  - Add deployment-grade runtime packaging for 24/7 hosting on VPS with restart, health, and recovery behavior
+  - Expand analytics with clearer attribution across bots, trades, and regime changes for decision review
+  - Finalize execution playbooks for live-trading operations, incident handling, and rollback steps
+
+  Current live status
+  - Spot paper trading manager is active and dashboards are regenerating locally
+  - Research scraper is active and keeps the research page refreshed from the markdown feed
+  - The dashboard app is now the main local control surface for portfolio, bot, research, roadmap, and cron views
+  - Cron monitoring is centralized on the cron page instead of the main dashboard
+  - Current focus is product hardening: optimizer integration, promotion gates, analytics attribution, and runbooks

@@ -17,7 +17,7 @@ from typing import Any, Iterable
 REPO_ROOT = Path(__file__).resolve().parents[2]
 DATA_DIR = REPO_ROOT / "data"
 DB_PATH = DATA_DIR / "dashboard.sqlite"
-SUMMARY_FILE = REPO_ROOT / "trading_bot" / "High-level summary.yml"
+SUMMARY_FILE = REPO_ROOT / "trading_bot" / "roadmap_summary.yml"
 RESEARCH_FILE = Path.home() / "Documents" / "ai-crypto-research.md"
 PERFORMANCE_FILE = REPO_ROOT / "performance_journal.json"
 CRON_FILE = REPO_ROOT / "logs" / "cron.json"

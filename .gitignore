@@ -25,3 +25,6 @@ htmlcov/
 /performance_journal.json
 /market_data.json
 /logs/cron.json
+/data/candidate_scores.json
+/data/allocation_optimizer_snapshot.json
+/data/live_promotion_report.json
