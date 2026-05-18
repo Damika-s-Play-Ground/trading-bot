@@ -40,7 +40,13 @@
     "use_trend_filter": false,
     "use_volume_filter": true,
     "min_volume_usdt": 1000,
+    "order_book_enabled": true,
+    "order_book_limit": 20,
+    "order_book_depth_window_pct": 1.0,
     "max_spread_pct": 0.5,
+    "order_book_max_slippage_pct": 0.25,
+    "order_book_min_depth_multiple": 8.0,
+    "order_book_fail_closed": true,
     "fear_greed_max": 70,
     "fear_greed_boost": 25,
     "fear_greed_boost_multiplier": 1.5

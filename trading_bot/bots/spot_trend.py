@@ -18,6 +18,7 @@ from trading_bot.core.bot_runtime import (
     new_buys_disabled,
     scale_trade_size,
 )
+from trading_bot.core.order_book_gates import compact_gate_reason, evaluate_entry_gate
 from trading_bot.core.state_store import load_json_path, save_json_path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -47,6 +48,18 @@ CONFIG = {
 CONFIG.update(load_json_path(CONFIG_FILE, {}))
 
 CONFIG["initial_balance"] = get_target_capital(CONFIG["initial_balance"])
+
+
+def order_book_settings():
+    return {
+        "enabled": CONFIG.get("order_book_enabled", True),
+        "limit": CONFIG.get("order_book_limit", 20),
+        "depth_window_pct": CONFIG.get("order_book_depth_window_pct", 1.0),
+        "max_spread_pct": CONFIG.get("max_spread_pct", 0.5),
+        "max_slippage_pct": CONFIG.get("order_book_max_slippage_pct", 0.25),
+        "min_depth_multiple": CONFIG.get("order_book_min_depth_multiple", 8.0),
+        "fail_closed": CONFIG.get("order_book_fail_closed", True),
+    }
 
 # Helpers
 def get_klines(symbol, interval="1h", limit=100):
@@ -265,6 +278,10 @@ def run():
             scaled_trade = scale_trade_size(CONFIG["buy_per_trade"], target_capital, paper.initial)
             cost = min(scaled_trade, remaining / max_new)
             if cost < 5: break
+            gate = evaluate_entry_gate(sig["coin"], cost, settings=order_book_settings())
+            if not gate.get("ok"):
+                print(f"  SKIP {sig['coin']}: order-book gate blocked entry ({compact_gate_reason(gate)})")
+                continue
             print(f"  BUY {sig['coin']}: ${cost:.2f} @ ${sig['price']:.4f}")
             if paper.buy(sig["coin"], sig["price"], cost):
                 executed_buys.append(sig["coin"])

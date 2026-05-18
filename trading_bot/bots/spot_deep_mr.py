@@ -16,6 +16,7 @@ from trading_bot.core.bot_runtime import (
     new_buys_disabled,
     scale_trade_size,
 )
+from trading_bot.core.order_book_gates import compact_gate_reason, evaluate_entry_gate
 from trading_bot.core.state_store import load_json_path, save_json_path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -24,8 +25,24 @@ PAPER_FILE = BASE_DIR / "paper_deepmr.json"
 CONFIG = {"coins":["BTC","ETH","SOL","BNB","XRP","LINK","ADA","AVAX","DOT","NEAR","ARB","OP","AAVE","IMX","ALGO","FIL","GRT","HBAR","XLM","ATOM"],
     "rsi_entry":20,"rsi_period":7,"take_profit_pct":5.5,"stop_loss_pct":-6.0,
     "trailing_activation":3.0,"trailing_distance":1.5,
-    "buy_per_trade":5.0,"max_positions":6,"max_spend_per_day":30.0,"initial_balance":200.0,"min_volume":500}
+    "buy_per_trade":5.0,"max_positions":6,"max_spend_per_day":30.0,"initial_balance":200.0,"min_volume":500,
+    "order_book_enabled":True,"order_book_limit":20,"order_book_depth_window_pct":1.0,
+    "max_spread_pct":0.5,"order_book_max_slippage_pct":0.25,"order_book_min_depth_multiple":8.0,
+    "order_book_fail_closed":True}
 CONFIG["initial_balance"] = get_target_capital(CONFIG["initial_balance"])
+
+
+def order_book_settings():
+    return {
+        "enabled": CONFIG.get("order_book_enabled", True),
+        "limit": CONFIG.get("order_book_limit", 20),
+        "depth_window_pct": CONFIG.get("order_book_depth_window_pct", 1.0),
+        "max_spread_pct": CONFIG.get("max_spread_pct", 0.5),
+        "max_slippage_pct": CONFIG.get("order_book_max_slippage_pct", 0.25),
+        "min_depth_multiple": CONFIG.get("order_book_min_depth_multiple", 8.0),
+        "fail_closed": CONFIG.get("order_book_fail_closed", True),
+    }
+
 
 def get_klines(s,l=100):
     url=f"https://api.binance.com/api/v3/klines?symbol={s}USDT&interval=1h&limit={l}"
@@ -147,6 +164,10 @@ def run():
             scaled_trade = scale_trade_size(CONFIG["buy_per_trade"], target_capital, paper.initial)
             cost=min(scaled_trade, remaining_budget/max_new)
             if cost<3:break
+            gate = evaluate_entry_gate(sig["coin"], cost, settings=order_book_settings())
+            if not gate.get("ok"):
+                print(f"  SKIP {sig['coin']}: order-book gate blocked entry ({compact_gate_reason(gate)})")
+                continue
             print(f"  BUY {sig['coin']}: ${cost:.2f} @ ${sig['price']:.4f} (RSI={sig['rsi']:.1f})")
             if paper.buy(sig["coin"],sig["price"],cost):
                 remaining_budget -= cost

@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any
 
 from trading_bot.core.bot_runtime import get_blocked_coins, get_target_capital, new_buys_disabled
+from trading_bot.core.order_book_gates import compact_gate_reason, evaluate_entry_gate
 from trading_bot.core.state_store import load_json_path, save_json_path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -35,9 +36,28 @@ CONFIG = {
     "regime_entry_streak": 3,
     "regime_exit_streak": 2,
     "reseed_drift_pct": 4.5,
+    "order_book_enabled": True,
+    "order_book_limit": 20,
+    "order_book_depth_window_pct": 1.0,
+    "max_spread_pct": 0.5,
+    "order_book_max_slippage_pct": 0.25,
+    "order_book_min_depth_multiple": 8.0,
+    "order_book_fail_closed": True,
 }
 
 CONFIG["initial_balance"] = get_target_capital(CONFIG["initial_balance"])
+
+
+def order_book_settings() -> dict[str, Any]:
+    return {
+        "enabled": CONFIG.get("order_book_enabled", True),
+        "limit": CONFIG.get("order_book_limit", 20),
+        "depth_window_pct": CONFIG.get("order_book_depth_window_pct", 1.0),
+        "max_spread_pct": CONFIG.get("max_spread_pct", 0.5),
+        "max_slippage_pct": CONFIG.get("order_book_max_slippage_pct", 0.25),
+        "min_depth_multiple": CONFIG.get("order_book_min_depth_multiple", 8.0),
+        "fail_closed": CONFIG.get("order_book_fail_closed", True),
+    }
 
 
 def _load_json(path: Path, default: Any) -> Any:
@@ -236,6 +256,10 @@ class PaperGrid:
                 break
             buy_price = round(anchor * (1 - spacing * level), 8)
             if price > buy_price or self.usdt < float(CONFIG["buy_per_grid"]):
+                continue
+            gate = evaluate_entry_gate(coin, float(CONFIG["buy_per_grid"]), settings=order_book_settings())
+            if not gate.get("ok"):
+                trades_this_run.append(f"SKIP {coin} L{level} ({compact_gate_reason(gate)})")
                 continue
             gross_qty = float(CONFIG["buy_per_grid"]) / max(buy_price, 1e-9)
             qty = gross_qty * (1 - fee_rate)

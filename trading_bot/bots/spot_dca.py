@@ -22,6 +22,7 @@ from trading_bot.core.bot_runtime import (
     new_buys_disabled,
     scale_trade_size,
 )
+from trading_bot.core.order_book_gates import compact_gate_reason, evaluate_entry_gate
 from trading_bot.core.state_store import load_json_path, save_json_path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -380,6 +381,18 @@ def get_coin_weight(coin):
     return tier_map.get(coin, 1.0)
 
 
+def order_book_settings():
+    return {
+        "enabled": filters.get("order_book_enabled", True),
+        "limit": filters.get("order_book_limit", 20),
+        "depth_window_pct": filters.get("order_book_depth_window_pct", 1.0),
+        "max_spread_pct": filters.get("max_spread_pct", 0.5),
+        "max_slippage_pct": filters.get("order_book_max_slippage_pct", 0.25),
+        "min_depth_multiple": filters.get("order_book_min_depth_multiple", 8.0),
+        "fail_closed": filters.get("order_book_fail_closed", True),
+    }
+
+
 def run():
     print(f"🤖 Binance Smart DCA Bot — {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     print(f"{'='*50}")
@@ -526,6 +539,10 @@ def run():
             cost = min(boosted_cost, remaining_budget / max_new)
             if cost < 3:
                 break
+            gate = evaluate_entry_gate(coin, cost, settings=order_book_settings())
+            if not gate.get("ok"):
+                print(f"  SKIP {coin}: order-book gate blocked entry ({compact_gate_reason(gate)})")
+                continue
             print(f"  BUY {coin}: ${cost:.2f} @ ${sig['price']:.4f} (RSI={sig['rsi']:.1f}, wt={weight:.1f}x)")
             if paper.buy(coin, sig["price"], cost):
                 executed_buys.append(coin)
