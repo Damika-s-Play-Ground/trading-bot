@@ -16,10 +16,10 @@ summary: |
   - Wire the optimizer outputs into live manager allocation decisions instead of keeping them mostly offline
   - Harden promotion rules from paper trading to controlled live trading with explicit safety gates
   - Expand analytics with clearer attribution across bots, trades, and regime changes for decision review
+  - Finalize execution playbooks for live-trading operations, incident handling, and rollback steps
 
   What’s still missing:
   - Add deployment-grade runtime packaging for 24/7 hosting on VPS with restart, health, and recovery behavior
-  - Finalize execution playbooks for live-trading operations, incident handling, and rollback steps
 
   Current live status
   - Spot paper trading manager is active and dashboards are regenerating locally

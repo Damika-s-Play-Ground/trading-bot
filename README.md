@@ -19,6 +19,10 @@ Concise multi-strategy paper-trading repo for spot + futures experiments.
 - TODO completion state now persists in the dashboard SQLite store instead of only browser localStorage.
 - Cron health now warns on missed cadence, not just stale status.
 - Glossary updated to explain new dashboard/store/cron concepts.
+- Candidate scoring, allocation optimizer snapshots, promotion gates, and attribution review are now part of the live paper-trading loop.
+
+## Operations playbook
+- `docs/live-trading-operations-playbook.md` — live-trading runbook, incident handling, rollback steps, and cutover checklist.
 
 ## Stable entrypoints
 These root-level scripts are kept for compatibility:
