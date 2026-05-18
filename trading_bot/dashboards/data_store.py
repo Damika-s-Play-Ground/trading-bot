@@ -178,6 +178,10 @@ def ensure_schema() -> None:
                 "source_name": "TEXT",
                 "discovered_at": "TEXT",
                 "fingerprint": "TEXT",
+                "active_in_feed": "INTEGER DEFAULT 1",
+                "first_seen_at": "TEXT",
+                "last_seen_at": "TEXT",
+                "archived_at": "TEXT",
                 "topic_tags": "TEXT",
                 "quality_score": "REAL DEFAULT 0",
                 "relevance_score": "REAL DEFAULT 0",
@@ -412,21 +416,31 @@ def _research_metadata(entry: dict[str, Any], details: dict[str, str]) -> dict[s
 
 
 def sync_research_entries(path: Path = RESEARCH_FILE) -> int:
+    ensure_schema()
     if not path.exists():
         return 0
     text = path.read_text()
     entries = _parse_research_entries(text)
     count = 0
     item_keys = [_hash_key(entry.get("date", ""), entry.get("title", "")) for entry in entries]
+    synced_at = datetime.now(timezone.utc).isoformat()
     with _connect() as conn:
         if item_keys:
             placeholders = ", ".join("?" for _ in item_keys)
             conn.execute(
-                f"DELETE FROM research_items WHERE item_key NOT IN ({placeholders})",
-                item_keys,
+                f"""
+                UPDATE research_items
+                SET active_in_feed = 0,
+                    archived_at = COALESCE(archived_at, ?)
+                WHERE item_key NOT IN ({placeholders})
+                """,
+                (synced_at, *item_keys),
             )
         else:
-            conn.execute("DELETE FROM research_items")
+            conn.execute(
+                "UPDATE research_items SET active_in_feed = 0, archived_at = COALESCE(archived_at, ?)",
+                (synced_at,),
+            )
         for entry in entries:
             details = entry.get("details", {}) if isinstance(entry.get("details"), dict) else {}
             metadata = _research_metadata(entry, details)
@@ -436,10 +450,17 @@ def sync_research_entries(path: Path = RESEARCH_FILE) -> int:
                 INSERT OR REPLACE INTO research_items
                 (
                     item_key, date, platform, title, author, strategy, results, tools, takeaway, url, raw,
-                    source_type, source_name, discovered_at, fingerprint, topic_tags, quality_score, relevance_score,
+                    source_type, source_name, discovered_at, fingerprint, active_in_feed, first_seen_at, last_seen_at, archived_at,
+                    topic_tags, quality_score, relevance_score,
                     novelty_score, applicability_score, total_score, review_status, evidence_summary, suggested_action
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (
+                    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                    ?, ?, ?, ?, ?,
+                    COALESCE((SELECT first_seen_at FROM research_items WHERE item_key = ?), ?),
+                    ?, NULL,
+                    ?, ?, ?, ?, ?, ?, ?, ?, ?
+                )
                 """,
                 (
                     item_key,
@@ -457,6 +478,10 @@ def sync_research_entries(path: Path = RESEARCH_FILE) -> int:
                     metadata.get("source_name"),
                     metadata.get("discovered_at"),
                     metadata.get("fingerprint"),
+                    1,
+                    item_key,
+                    synced_at,
+                    synced_at,
                     metadata.get("topic_tags"),
                     metadata.get("quality_score"),
                     metadata.get("relevance_score"),
@@ -648,10 +673,12 @@ def load_research_items(limit: int = 200) -> list[dict[str, Any]]:
             """
             SELECT
                 item_key, date, platform, title, author, strategy, results, tools, takeaway, url, raw,
-                source_type, source_name, discovered_at, fingerprint, topic_tags, quality_score, relevance_score,
+                source_type, source_name, discovered_at, fingerprint, active_in_feed, first_seen_at, last_seen_at, archived_at,
+                topic_tags, quality_score, relevance_score,
                 novelty_score, applicability_score, total_score, review_status, evidence_summary, suggested_action
             FROM research_items
             ORDER BY
+                COALESCE(active_in_feed, 1) DESC,
                 CASE review_status
                     WHEN 'promoted' THEN 0
                     WHEN 'shortlisted' THEN 1
@@ -670,6 +697,7 @@ def load_research_items(limit: int = 200) -> list[dict[str, Any]]:
     for row in rows:
         item = dict(row)
         item["status"] = "open"
+        item["active_in_feed"] = bool(item.get("active_in_feed", 1))
         override = overrides.get(str(item.get("item_key")))
         if override:
             item["status"] = override.get("status", "open")

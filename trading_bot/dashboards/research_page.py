@@ -64,6 +64,11 @@ def _render_item(item: dict, idx: int) -> str:
     review_label = REVIEW_LABELS.get(review_status, review_status.title())
     review_color = REVIEW_COLORS.get(review_status, "#94a3b8")
     done_class = " done" if status == "done" else ""
+    feed_badge = (
+        '<span class="feed-badge feed-live">Live feed</span>'
+        if bool(item.get("active_in_feed", True))
+        else '<span class="feed-badge feed-archived">Archived</span>'
+    )
     link_html = f'<a href="{_escape(url)}" target="_blank" rel="noreferrer" onclick="event.stopPropagation()">Source →</a>' if url else ""
     search_blob = " ".join(
         str(item.get(key, ""))
@@ -93,6 +98,7 @@ def _render_item(item: dict, idx: int) -> str:
                 <span class="platform-badge">{_escape(item.get('platform', 'Source'))}</span>
                 <span class="date-badge">{_escape(item.get('date', 'Unknown'))}</span>
                 <span class="review-badge review-{_escape(review_status)}">{_escape(review_label)}</span>
+                {feed_badge}
             </div>
             <span class="done-mark">✓</span>
         </div>
@@ -130,6 +136,7 @@ def build_research_page() -> None:
     latest = "—"
     promoted = 0
     shortlisted = 0
+    archived = 0
     if items:
         latest = items[0].get("date", "—")
     for item in items:
@@ -138,6 +145,8 @@ def build_research_page() -> None:
         sent_counts[_sentiment_bucket(item.get("results", ""))] += 1
         review_status = str(item.get("review_status", "raw") or "raw")
         review_counts[review_status] += 1
+        if not bool(item.get("active_in_feed", True)):
+            archived += 1
     promoted = review_counts.get("promoted", 0)
     shortlisted = review_counts.get("shortlisted", 0)
 
@@ -220,13 +229,15 @@ def build_research_page() -> None:
         .research-card.done .research-title {{ text-decoration:line-through; color:#94a3b8; }}
         .research-head {{ display:flex; justify-content:space-between; gap:10px; align-items:flex-start; margin-bottom:10px; }}
         .research-badges {{ display:flex; flex-wrap:wrap; gap:8px; }}
-        .num-badge, .platform-badge, .date-badge, .sentiment, .review-badge {{ font-size:11px; padding:3px 8px; border-radius:999px; border:1px solid #334155; }}
+        .num-badge, .platform-badge, .date-badge, .sentiment, .review-badge, .feed-badge {{ font-size:11px; padding:3px 8px; border-radius:999px; border:1px solid #334155; }}
         .num-badge {{ background:#3b82f622; color:#93c5fd; border-color:#3b82f655; font-weight:800; }}
         .platform-badge, .date-badge {{ background:#0f172a; color:#cbd5e1; }}
         .review-promoted {{ background:#22c55e1a; color:#86efac; border-color:#22c55e55; }}
         .review-shortlisted {{ background:#38bdf81a; color:#7dd3fc; border-color:#38bdf855; }}
         .review-raw {{ background:#334155; color:#cbd5e1; border-color:#475569; }}
         .review-rejected {{ background:#ef44441a; color:#fca5a5; border-color:#ef444455; }}
+        .feed-live {{ background:#0f172a; color:#cbd5e1; }}
+        .feed-archived {{ background:#f59e0b1a; color:#fde68a; border-color:#f59e0b55; }}
         .done-mark {{ color:#22c55e; font-size:18px; opacity:.25; }}
         .research-card.done .done-mark {{ opacity:1; }}
         .research-title {{ font-size:15px; line-height:1.45; margin-bottom:10px; }}
@@ -393,6 +404,7 @@ def build_research_page() -> None:
                 <div class="hero-stat"><div class="k">Latest</div><div class="v" style="font-size:16px">{_escape(latest)}</div></div>
                 <div class="hero-stat"><div class="k">Promoted</div><div class="v">{promoted}</div></div>
                 <div class="hero-stat"><div class="k">Shortlisted</div><div class="v">{shortlisted}</div></div>
+                <div class="hero-stat"><div class="k">Archived</div><div class="v">{archived}</div></div>
                 <div class="hero-stat"><div class="k">Open</div><div class="v" id="to-eval-count">{total}</div></div>
                 <div class="hero-stat"><div class="k">Evaluated</div><div class="v" id="eval-count">0</div></div>
             </div>
