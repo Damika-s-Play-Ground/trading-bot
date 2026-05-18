@@ -151,6 +151,11 @@ button, input { font: inherit; }
 .modal-summary-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin-bottom: 14px; }
 .bot-expand { margin-top: 15px; padding-top: 15px; border-top: 1px solid var(--line); display: grid; gap: 14px; }
 .expand-grid { display: grid; grid-template-columns: 1.1fr 1fr; gap: 14px; }
+.attribution-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.compact-shell { overflow-x: auto; }
+.compact-shell .data-table { min-width: 0; }
+.compact-table thead th { padding: 11px 12px; }
+.compact-table tbody td { padding: 11px 12px; font-size: 12.5px; white-space: nowrap; }
 .modal-grid-top { margin-bottom: 14px; }
 .modal-expand { margin-top: 0; padding-top: 0; border-top: none; }
 .mini-panel { background: rgba(15,23,42,.72); border: 1px solid var(--line); border-radius: 14px; padding: 14px; }

@@ -22,11 +22,15 @@ createApp({
   },
   computed: {
     summary() { return this.payload?.summary || {}; },
+    analytics() { return this.payload?.analytics || {}; },
     bots() { return this.payload?.bots || []; },
     activeBot() {
       return this.bots.find(bot => bot.key === this.activeBotKey) || null;
     },
     recentTrades() { return this.payload?.recent_trades || []; },
+    botAttributionRows() { return this.analytics?.bot_contribution || []; },
+    tradeAttributionRows() { return this.analytics?.trade_attribution || []; },
+    regimeReview() { return this.analytics?.regime_review || {}; },
     cronJobs() { return this.payload?.cron || []; },
     todoStats() { return this.payload?.todo?.stats || {}; },
     allocationSegments() { return this.payload?.charts?.allocation || []; },
@@ -236,6 +240,9 @@ createApp({
       const dt = new Date(value);
       if (Number.isNaN(dt.getTime())) return '—';
       return dt.toLocaleString();
+    },
+    humanizeToken(value) {
+      return String(value || '—').replace(/_/g, ' ').replace(/\b\w/g, match => match.toUpperCase());
     },
     toDateTimeLocalValue(value) {
       if (!value) return '';
@@ -558,6 +565,95 @@ createApp({
               <div class="bar-track"><div class="bar-fill" :style="{ width: activityWidth(row), background: row.color }"></div></div>
               <div class="bar-meta">{{ row.meta }}</div>
             </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="section-card">
+        <div class="section-head">
+          <div>
+            <h2>🧭 Attribution review</h2>
+            <div class="section-note">Clearer attribution across bot capital, recent trade outcomes, and regime transitions so decision review is faster.</div>
+          </div>
+        </div>
+        <div class="expand-grid attribution-grid">
+          <div class="mini-panel">
+            <div class="mini-title">Bot contribution</div>
+            <div class="table-shell compact-shell">
+              <table class="data-table compact-table">
+                <thead>
+                  <tr>
+                    <th>Bot</th>
+                    <th>Share</th>
+                    <th>Value</th>
+                    <th>Unrealized</th>
+                    <th>Realized</th>
+                    <th>Bias</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="row in botAttributionRows" :key="row.key">
+                    <td>{{ row.name }}</td>
+                    <td>{{ shortPct(row.portfolio_pct) }}</td>
+                    <td>{{ formatMoney(row.value) }}</td>
+                    <td :class="row.unrealized_pnl >= 0 ? 'green' : 'red'">{{ formatMoney(row.unrealized_pnl) }}</td>
+                    <td :class="row.realized_recent >= 0 ? 'green' : 'red'">{{ formatMoney(row.realized_recent) }}</td>
+                    <td><span class="table-pill outline">{{ humanizeToken(row.optimizer_bias) }} · x{{ Number(row.combined_multiplier || 1).toFixed(2) }}</span></td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="mini-panel">
+            <div class="mini-title">Recent trade attribution</div>
+            <div class="table-shell compact-shell">
+              <table class="data-table compact-table">
+                <thead>
+                  <tr>
+                    <th>Bot</th>
+                    <th>Trades</th>
+                    <th>Buys</th>
+                    <th>Sells</th>
+                    <th>Notional</th>
+                    <th>PnL</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="row in tradeAttributionRows" :key="row.bot">
+                    <td>{{ row.bot }}</td>
+                    <td>{{ row.count }}</td>
+                    <td>{{ row.buy_count }}</td>
+                    <td>{{ row.sell_count }}</td>
+                    <td>{{ formatMoney(row.notional) }}</td>
+                    <td :class="row.pnl >= 0 ? 'green' : 'red'">{{ formatMoney(row.pnl) }}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="mini-panel">
+            <div class="mini-title">Regime changes</div>
+            <div class="metric-grid">
+              <div class="metric"><div class="k">Current</div><div class="v">{{ humanizeToken(regimeReview.current) }}</div></div>
+              <div class="metric"><div class="k">Samples</div><div class="v">{{ regimeReview.samples || 0 }}</div></div>
+              <div class="metric"><div class="k">Promotion</div><div class="v">{{ humanizeToken(regimeReview.latest_status) }}</div></div>
+              <div class="metric"><div class="k">Failed gates</div><div class="v">{{ regimeReview.failed_gates ?? 0 }}</div></div>
+            </div>
+            <div class="todo-strip" v-if="regimeReview.counts">
+              <span class="todo-pill" v-for="(count, regime) in regimeReview.counts" :key="regime">{{ humanizeToken(regime) }} {{ count }}</span>
+            </div>
+            <div class="reason-list" v-if="(regimeReview.transitions || []).length">
+              <div class="reason-item" v-for="change in regimeReview.transitions" :key="change.timestamp + change.from + change.to">
+                <div class="reason-top">
+                  <strong>{{ humanizeToken(change.from) }} → {{ humanizeToken(change.to) }}</strong>
+                  <span class="section-note">{{ relativeTime(change.timestamp) }}</span>
+                </div>
+                <div class="reason-text">{{ formatTime(change.timestamp) }}</div>
+              </div>
+            </div>
+            <div v-else class="empty-state">No recent regime transitions inside the current journal window.</div>
           </div>
         </div>
       </div>

@@ -428,6 +428,77 @@ def _chart_payload(cards: list[dict[str, Any]], performance_runs: list[dict[str,
     }
 
 
+def _attribution_payload(
+    cards: list[dict[str, Any]],
+    performance_runs: list[dict[str, Any]],
+    recent_trades: list[dict[str, Any]],
+    manager_state: dict[str, Any],
+) -> dict[str, Any]:
+    perf = manager_state.get("performance", {}) if isinstance(manager_state.get("performance"), dict) else {}
+    bot_rows = []
+    for card in sorted(cards, key=lambda item: _safe_float(item.get("value")), reverse=True):
+        metrics = perf.get(card["key"], {}) if isinstance(perf.get(card["key"]), dict) else {}
+        bot_rows.append(
+            {
+                "key": card["key"],
+                "name": card["name"],
+                "value": round(_safe_float(card.get("value")), 2),
+                "portfolio_pct": round(_safe_float(card.get("portfolio_pct")), 2),
+                "unrealized_pnl": round(_safe_float(metrics.get("unrealized_pnl")), 2),
+                "realized_recent": round(_safe_float(metrics.get("realized_pnl_recent")), 2),
+                "drawdown_pct": round(_safe_float(metrics.get("drawdown_pct")), 2),
+                "combined_multiplier": round(_safe_float(metrics.get("combined_multiplier", metrics.get("multiplier", 1.0))), 3),
+                "optimizer_bias": metrics.get("optimizer_bias", "hold"),
+            }
+        )
+
+    trade_groups: dict[str, dict[str, Any]] = {}
+    for trade in recent_trades:
+        bot_name = str(trade.get("bot") or "Unknown")
+        item = trade_groups.setdefault(bot_name, {"bot": bot_name, "count": 0, "sell_count": 0, "buy_count": 0, "pnl": 0.0, "notional": 0.0})
+        action = str(trade.get("action") or "").upper()
+        item["count"] += 1
+        item["pnl"] += _safe_float(trade.get("pnl"))
+        item["notional"] += _safe_float(trade.get("usdt"))
+        if "SELL" in action:
+            item["sell_count"] += 1
+        else:
+            item["buy_count"] += 1
+    trade_rows = sorted(trade_groups.values(), key=lambda item: (item["pnl"], item["count"]), reverse=True)
+    for item in trade_rows:
+        item["pnl"] = round(item["pnl"], 2)
+        item["notional"] = round(item["notional"], 2)
+
+    regime_counts: dict[str, int] = {}
+    transitions = []
+    previous = None
+    recent_runs = performance_runs[-30:]
+    for run in recent_runs:
+        regime = str(run.get("regime") or "sideways")
+        regime_counts[regime] = regime_counts.get(regime, 0) + 1
+        if previous and previous != regime:
+            transitions.append({
+                "from": previous,
+                "to": regime,
+                "timestamp": run.get("timestamp") or "",
+            })
+        previous = regime
+
+    promotion = manager_state.get("promotion_readiness", {}) if isinstance(manager_state.get("promotion_readiness"), dict) else {}
+    return {
+        "bot_contribution": bot_rows,
+        "trade_attribution": trade_rows,
+        "regime_review": {
+            "current": manager_state.get("regime", "sideways"),
+            "counts": regime_counts,
+            "transitions": transitions[-6:],
+            "latest_status": promotion.get("status", "paper_only"),
+            "failed_gates": promotion.get("summary", {}).get("failed_gates", 0),
+            "samples": len(recent_runs),
+        },
+    }
+
+
 def dashboard_payload() -> dict[str, Any]:
     now = time.time()
     cached_payload = _PAYLOAD_CACHE.get("payload")
@@ -464,6 +535,7 @@ def dashboard_payload() -> dict[str, Any]:
             "latest_equity": round(_safe_float(latest_run.get("portfolio_total", portfolio_total)), 2),
         },
         "charts": _chart_payload(cards, performance_runs),
+        "analytics": _attribution_payload(cards, performance_runs, recent_trades, manager_state),
         "bots": cards,
         "recent_trades": recent_trades,
         "cron": _cron_summary(cron_runs),
