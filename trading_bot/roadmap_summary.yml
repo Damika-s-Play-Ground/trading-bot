@@ -13,9 +13,9 @@ summary: |
   - Hermes cron automation is running for paper trading and research scraping
   - Repo structure, docs, wrappers, and GitHub sync are in place
   - Build the unified candidate scorer that turns research and live bot metrics into one ranking signal
+  - Wire the optimizer outputs into live manager allocation decisions instead of keeping them mostly offline
 
   What’s still missing:
-  - Wire the optimizer outputs into live manager allocation decisions instead of keeping them mostly offline
   - Harden promotion rules from paper trading to controlled live trading with explicit safety gates
   - Add deployment-grade runtime packaging for 24/7 hosting on VPS with restart, health, and recovery behavior
   - Expand analytics with clearer attribution across bots, trades, and regime changes for decision review

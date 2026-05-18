@@ -16,6 +16,8 @@ import urllib.request
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+from trading_bot.analysis.allocation_optimizer import build_snapshot as build_allocation_optimizer_snapshot
+
 REPO_ROOT = Path(__file__).resolve().parents[2]
 BASE_DIR = REPO_ROOT
 CAPITAL = 1200.0
@@ -32,6 +34,7 @@ BOT_SEQUENCE = ["dca", "trend", "grid", "momentum", "deep_mr"]
 MANAGER_STATE_FILE = BASE_DIR / "manager_state.json"
 PORTFOLIO_STATE_FILE = BASE_DIR / "manager_portfolio.json"
 PERFORMANCE_JOURNAL_FILE = BASE_DIR / "performance_journal.json"
+OPTIMIZER_SNAPSHOT_FILE = BASE_DIR / "data" / "allocation_optimizer_snapshot.json"
 
 BOT_LABELS = {
     "dca": "Bot #1 - DCA",
@@ -87,6 +90,21 @@ BASE_ALLOCATIONS = {
         "deep_mr": {"pct": 35, "reason": "Best for sharp oversold snaps"},
     },
 }
+
+
+def refresh_optimizer_snapshot():
+    try:
+        return build_allocation_optimizer_snapshot()
+    except Exception:
+        return load_json(OPTIMIZER_SNAPSHOT_FILE, {})
+
+
+def optimizer_multiplier(bot_key, snapshot):
+    recommendations = snapshot.get("recommendations", {}) if isinstance(snapshot, dict) else {}
+    rec = recommendations.get(bot_key, {}) if isinstance(recommendations.get(bot_key), dict) else {}
+    multiplier = float(rec.get("multiplier", 1.0) or 1.0)
+    multiplier = max(0.80, min(1.20, multiplier))
+    return multiplier, rec
 
 
 def load_json(path, default=None):
@@ -528,11 +546,19 @@ def performance_multiplier(bot_key, state, prices):
 
 def build_adaptive_allocation(regime, states, prices):
     base = BASE_ALLOCATIONS.get(regime, BASE_ALLOCATIONS["sideways"])
+    optimizer_snapshot = refresh_optimizer_snapshot()
     raw = {}
     metrics = {}
     for bot_key in BOT_SEQUENCE:
-        mult, perf = performance_multiplier(bot_key, states.get(bot_key, {}), prices)
-        raw[bot_key] = base[bot_key]["pct"] * mult
+        perf_mult, perf = performance_multiplier(bot_key, states.get(bot_key, {}), prices)
+        opt_mult, opt_meta = optimizer_multiplier(bot_key, optimizer_snapshot)
+        combined_mult = perf_mult * opt_mult
+        raw[bot_key] = base[bot_key]["pct"] * combined_mult
+        perf["performance_multiplier"] = round(perf_mult, 3)
+        perf["optimizer_multiplier"] = round(opt_mult, 3)
+        perf["optimizer_bias"] = opt_meta.get("bias", "hold")
+        perf["optimizer_confidence"] = opt_meta.get("confidence")
+        perf["combined_multiplier"] = round(combined_mult, 3)
         metrics[bot_key] = perf
 
     total_raw = sum(raw.values()) or 1.0
@@ -547,13 +573,16 @@ def build_adaptive_allocation(regime, states, prices):
             "pct": round(pct, 1),
             "base_pct": base[bot_key]["pct"],
             "reason": base[bot_key]["reason"],
-            "multiplier": metrics[bot_key]["multiplier"],
+            "multiplier": metrics[bot_key]["combined_multiplier"],
+            "performance_multiplier": metrics[bot_key]["performance_multiplier"],
+            "optimizer_multiplier": metrics[bot_key]["optimizer_multiplier"],
+            "optimizer_bias": metrics[bot_key]["optimizer_bias"],
         }
         metrics[bot_key]["target_capital"] = round(target_capital, 2)
         metrics[bot_key]["drift_abs"] = round(drift_abs, 2)
         metrics[bot_key]["drift_pct"] = round(drift_pct, 2)
         metrics[bot_key]["overweight"] = drift_pct >= BOT_DRIFT_THROTTLE_PCT
-    return allocation, metrics
+    return allocation, metrics, optimizer_snapshot
 
 
 def portfolio_status(states, prices):
@@ -691,6 +720,10 @@ def append_performance_journal(regime, allocation, metrics, portfolio, migration
                 "expectancy": metrics[bot_key]["expectancy"],
                 "drawdown_pct": metrics[bot_key]["drawdown_pct"],
                 "allocation_pct": allocation[bot_key]["pct"],
+                "performance_multiplier": metrics[bot_key].get("performance_multiplier", metrics[bot_key].get("multiplier")),
+                "optimizer_multiplier": metrics[bot_key].get("optimizer_multiplier", 1.0),
+                "combined_multiplier": metrics[bot_key].get("combined_multiplier", metrics[bot_key].get("multiplier")),
+                "optimizer_bias": metrics[bot_key].get("optimizer_bias", "hold"),
             }
             for bot_key in BOT_SEQUENCE
         },
@@ -701,8 +734,8 @@ def append_performance_journal(regime, allocation, metrics, portfolio, migration
 
 def print_allocation_table(regime, allocation, metrics):
     print(f"\n💰 Adaptive Capital Allocation (${CAPITAL:.0f} total) — regime: {regime.upper()}")
-    print(f"  {'Bot':<20} {'Base':>6} {'Adj':>6} {'Target':>9} {'Current':>9} {'Drift':>8}")
-    print(f"  {'─'*20} {'─'*6} {'─'*6} {'─'*9} {'─'*9} {'─'*8}")
+    print(f"  {'Bot':<20} {'Base':>6} {'Adj':>6} {'Perf':>6} {'Opt':>6} {'Target':>9} {'Current':>9} {'Drift':>8}")
+    print(f"  {'─'*20} {'─'*6} {'─'*6} {'─'*6} {'─'*6} {'─'*9} {'─'*9} {'─'*8}")
     for bot_key in BOT_SEQUENCE:
         perf = metrics[bot_key]
         drift = f"{perf['drift_pct']:+.1f}%"
@@ -710,6 +743,8 @@ def print_allocation_table(regime, allocation, metrics):
             f"  {BOT_LABELS[bot_key]:<20} "
             f"{allocation[bot_key]['base_pct']:>5.1f}% "
             f"{allocation[bot_key]['pct']:>5.1f}% "
+            f"{allocation[bot_key]['performance_multiplier']:>5.2f} "
+            f"{allocation[bot_key]['optimizer_multiplier']:>5.2f} "
             f"${perf['target_capital']:>8.2f} "
             f"${perf['current_total']:>8.2f} "
             f"{drift:>8}"
@@ -760,14 +795,14 @@ def main():
 
     prices = fetch_price_map()
     states = load_all_states()
-    allocation, metrics = build_adaptive_allocation(regime, states, prices)
+    allocation, metrics, optimizer_snapshot = build_adaptive_allocation(regime, states, prices)
 
     rebalance_report = perform_cash_rebalance(states, prices, metrics)
     if rebalance_report:
         print_rebalance_report(rebalance_report)
         prices = fetch_price_map()
         states = load_all_states()
-        allocation, metrics = build_adaptive_allocation(regime, states, prices)
+        allocation, metrics, optimizer_snapshot = build_adaptive_allocation(regime, states, prices)
 
     print_allocation_table(regime, allocation, metrics)
 
@@ -870,6 +905,7 @@ def main():
             "drawdown_breaker": final_dd >= MAX_PORTFOLIO_DRAWDOWN_PCT,
             "stress_breaker": final_portfolio["combined_loss_pct"] >= MAX_STRESS_LOSS_PCT,
         },
+        "allocation_optimizer": optimizer_snapshot,
         "cash_rebalance": rebalance_report,
         "migration": load_portfolio_state().get("migration", {}),
         "performance_journal_file": str(PERFORMANCE_JOURNAL_FILE),
