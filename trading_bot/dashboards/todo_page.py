@@ -86,7 +86,7 @@ def build_page(items: list[dict[str, Any]], stats: dict[str, Any]) -> str:
   <meta charset=\"UTF-8\" />
   <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\" />
   <title>Trading Bot Roadmap</title>
-  {build_shared_style()}
+  <style>{build_shared_style()}</style>
   <style>
     .todo-shell {{ display:grid; gap:18px; }}
     .hero-card, .stats-card, .composer-card, .timeline-card, .modal-card {{ background:linear-gradient(180deg, rgba(15,23,42,.96), rgba(2,6,23,.96)); border:1px solid rgba(148,163,184,.18); border-radius:22px; box-shadow:0 22px 48px rgba(2,6,23,.35); }}
