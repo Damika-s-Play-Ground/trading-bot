@@ -214,6 +214,7 @@ def build_todo_page() -> None:
         .timeline-group-head strong {{ font-size:14px; }}
         .timeline-group-head span {{ color:#94a3b8; font-size:12px; }}
         .timeline-item {{ position:relative; width:100%; text-align:left; border:none; cursor:pointer; background:transparent; padding:0 0 0 54px; }}
+        .timeline-item[data-priority="true"] .timeline-card {{ border-color:#22c55e66; box-shadow:0 0 0 1px rgba(34,197,94,.16), 0 14px 28px rgba(15,23,42,.16); background:#102019; }}
         .timeline-item:focus-visible .timeline-card {{ outline:2px solid #60a5fa; outline-offset:2px; }}
         .timeline-marker {{ position:absolute; left:16px; top:18px; width:20px; height:20px; border-radius:999px; border:3px solid #0f172a; box-shadow:0 0 0 1px #334155; background:#60a5fa; z-index:1; }}
         .timeline-item[data-status="done"] .timeline-marker {{ background:#22c55e; }}
@@ -222,6 +223,7 @@ def build_todo_page() -> None:
         .timeline-item:hover .timeline-card {{ transform:translateY(-1px); border-color:#475569; background:#101b31; }}
         .timeline-item[data-status="done"] .timeline-card {{ opacity:.78; }}
         .timeline-head {{ display:flex; justify-content:space-between; gap:10px; align-items:flex-start; margin-bottom:10px; }}
+        .timeline-head-right {{ display:flex; flex-direction:column; gap:8px; align-items:flex-end; }}
         .timeline-title-wrap {{ display:flex; flex-wrap:wrap; gap:8px; align-items:center; }}
         .timeline-stage {{ display:inline-flex; align-items:center; justify-content:center; min-width:44px; height:26px; padding:0 10px; border-radius:999px; background:#22c55e22; color:#86efac; font-weight:800; font-size:11px; }}
         .timeline-pill {{ font-size:11px; padding:4px 9px; border-radius:999px; border:1px solid #334155; color:#cbd5e1; background:#111827; }}
@@ -231,6 +233,7 @@ def build_todo_page() -> None:
         .timeline-text {{ color:#e2e8f0; font-size:14px; line-height:1.7; margin-bottom:10px; }}
         .timeline-sub {{ color:#94a3b8; font-size:12px; line-height:1.6; margin-bottom:12px; }}
         .timeline-meta {{ display:flex; gap:10px 14px; flex-wrap:wrap; color:#64748b; font-size:11px; }}
+        .timeline-hint {{ color:#94a3b8; font-size:11px; line-height:1.4; }}
         .empty-state {{ text-align:center; color:#64748b; padding:28px 14px; font-size:13px; background:#0f172a; border:1px dashed #334155; border-radius:16px; }}
         .modal-backdrop {{ position:fixed; inset:0; background:rgba(2,6,23,.72); backdrop-filter:blur(8px); display:none; align-items:center; justify-content:center; padding:18px; z-index:9999; }}
         .modal-backdrop.open {{ display:flex; }}
@@ -407,7 +410,7 @@ def build_todo_page() -> None:
     function itemMarkup(item) {{
         const teaser = item.detail || item.text;
         return `
-            <button class="timeline-item" type="button" data-key="${{escapeHtml(item.item_key)}}" data-status="${{escapeHtml(item.status)}}">
+            <button class="timeline-item" type="button" data-key="${{escapeHtml(item.item_key)}}" data-status="${{escapeHtml(item.status)}}" data-priority="${{item.is_priority ? 'true' : 'false'}}">
                 <span class="timeline-marker" aria-hidden="true"></span>
                 <div class="timeline-card">
                     <div class="timeline-head">
@@ -416,7 +419,10 @@ def build_todo_page() -> None:
                             <span class="timeline-pill status-${{escapeHtml(item.status)}}">${{escapeHtml(item.status_label)}}</span>
                             <span class="timeline-pill">${{escapeHtml(item.category.charAt(0).toUpperCase() + item.category.slice(1))}}</span>
                         </div>
-                        <span class="timeline-pill">${{escapeHtml(item.source_file)}}</span>
+                        <div class="timeline-head-right">
+                            <span class="timeline-pill">${{escapeHtml(item.source_file)}}</span>
+                            <span class="timeline-hint">${{item.is_priority ? 'Next up · open details to execute cleanly' : 'Click to open details'}}</span>
+                        </div>
                     </div>
                     <div class="timeline-text">${{escapeHtml(item.text)}}</div>
                     <div class="timeline-sub">${{escapeHtml(teaser)}}</div>
@@ -441,9 +447,9 @@ def build_todo_page() -> None:
             return;
         }}
         empty.style.display = 'none';
-        const upcoming = items.filter((item) => item.status === 'open');
-        const notes = items.filter((item) => item.status === 'note');
-        const done = items.filter((item) => item.status === 'done');
+        const upcoming = items.filter((item) => item.status === 'open').map((item, index) => ({{ ...item, is_priority: index === 0 }}));
+        const notes = items.filter((item) => item.status === 'note').map((item) => ({{ ...item, is_priority: false }}));
+        const done = items.filter((item) => item.status === 'done').map((item) => ({{ ...item, is_priority: false }}));
         holder.innerHTML = [
             groupMarkup('Upcoming work', `${{upcoming.length}} items still to complete`, upcoming),
             groupMarkup('Live notes', `${{notes.length}} context items`, notes),

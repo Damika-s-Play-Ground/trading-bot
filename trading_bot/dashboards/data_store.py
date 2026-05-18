@@ -500,6 +500,90 @@ def sync_research_entries(path: Path = RESEARCH_FILE) -> int:
     return count
 
 
+def import_research_archive(snapshot_db: Path | str, archived_at: str | None = None) -> int:
+    ensure_schema()
+    snapshot_path = Path(snapshot_db)
+    if not snapshot_path.exists():
+        return 0
+    archived_stamp = archived_at or datetime.now(timezone.utc).isoformat()
+    imported = 0
+    legacy = sqlite3.connect(snapshot_path)
+    legacy.row_factory = sqlite3.Row
+    try:
+        legacy_rows = legacy.execute(
+            """
+            SELECT item_key, date, platform, title, author, strategy, results, tools, takeaway, url, raw
+            FROM research_items
+            """
+        ).fetchall()
+    finally:
+        legacy.close()
+    with _connect() as conn:
+        for row in legacy_rows:
+            item = dict(row)
+            item_key = str(item.get("item_key") or _hash_key(str(item.get("date") or ""), str(item.get("title") or "")))
+            exists = conn.execute("SELECT 1 FROM research_items WHERE item_key = ?", (item_key,)).fetchone()
+            if exists:
+                continue
+            details = {
+                "Strategy": str(item.get("strategy") or ""),
+                "Results": str(item.get("results") or ""),
+                "Tools": str(item.get("tools") or ""),
+                "Key takeaway": str(item.get("takeaway") or ""),
+                "URL": str(item.get("url") or ""),
+            }
+            metadata = _research_metadata(item, details)
+            first_seen = str(item.get("date") or archived_stamp)
+            conn.execute(
+                """
+                INSERT OR IGNORE INTO research_items
+                (
+                    item_key, date, platform, title, author, strategy, results, tools, takeaway, url, raw,
+                    source_type, source_name, discovered_at, fingerprint, active_in_feed, first_seen_at, last_seen_at, archived_at,
+                    topic_tags, quality_score, relevance_score,
+                    novelty_score, applicability_score, total_score, review_status, evidence_summary, suggested_action
+                )
+                VALUES (
+                    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                    ?, ?, ?, ?, ?, ?, ?, ?,
+                    ?, ?, ?, ?, ?, ?, ?, ?, ?
+                )
+                """,
+                (
+                    item_key,
+                    item.get("date"),
+                    item.get("platform"),
+                    item.get("title"),
+                    item.get("author"),
+                    item.get("strategy"),
+                    item.get("results"),
+                    item.get("tools"),
+                    item.get("takeaway"),
+                    item.get("url"),
+                    item.get("raw") or "",
+                    metadata.get("source_type"),
+                    metadata.get("source_name"),
+                    metadata.get("discovered_at"),
+                    metadata.get("fingerprint"),
+                    0,
+                    first_seen,
+                    first_seen,
+                    archived_stamp,
+                    metadata.get("topic_tags"),
+                    metadata.get("quality_score"),
+                    metadata.get("relevance_score"),
+                    metadata.get("novelty_score"),
+                    metadata.get("applicability_score"),
+                    metadata.get("total_score"),
+                    metadata.get("review_status"),
+                    metadata.get("evidence_summary"),
+                    metadata.get("suggested_action"),
+                ),
+            )
+            imported += 1
+    return imported
+
+
 def _classify_todo(text: str, section: str) -> str:
     if section == "done":
         return "done"
