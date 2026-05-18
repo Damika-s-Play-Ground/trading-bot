@@ -20,6 +20,9 @@ summary: |
 
   What’s still missing:
   - Add deployment-grade runtime packaging for 24/7 hosting on VPS with restart, health, and recovery behavior
+  - Add order-book-aware entry gates that reject wide-spread, thin-depth, and slippage-heavy spot setups before execution
+  - Normalize risk with ATR-based position sizing plus ATR-driven TP/SL distance validation instead of fixed percentage exits only
+  - Harden the grid bot with regime hysteresis and fee-aware minimum spacing so sideways-only behavior does not thrash during transitions
 
   Current live status
   - Spot paper trading manager is active and dashboards are regenerating locally

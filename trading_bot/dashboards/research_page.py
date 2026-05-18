@@ -45,9 +45,11 @@ def _render_item(item: dict, idx: int) -> str:
     sentiment = _sentiment_bucket(results)
     sentiment_color = {"positive": "#22c55e", "negative": "#ef4444", "neutral": "#94a3b8"}[sentiment]
     url = item.get("url", "") or ""
+    status = "done" if str(item.get("status", "open")) == "done" else "open"
+    done_class = " done" if status == "done" else ""
     link_html = f'<a href="{_escape(url)}" target="_blank" rel="noreferrer">Source →</a>' if url else ""
     return f"""
-    <article class="research-card" data-key="{_escape(item.get('item_key', idx))}" data-platform="{_escape(item.get('platform', 'source').lower())}" data-search="{_escape((item.get('title','') + ' ' + item.get('strategy','') + ' ' + item.get('results','') + ' ' + item.get('tools','') + ' ' + item.get('takeaway','')).lower())}" onclick="toggleDone(this)">
+    <article class="research-card{done_class}" data-key="{_escape(item.get('item_key', idx))}" data-platform="{_escape(item.get('platform', 'source').lower())}" data-done="{'1' if status == 'done' else '0'}" data-search="{_escape((item.get('title','') + ' ' + item.get('strategy','') + ' ' + item.get('results','') + ' ' + item.get('tools','') + ' ' + item.get('takeaway','')).lower())}" onclick="toggleDone(this)">
         <div class="research-head">
             <div class="research-badges">
                 <span class="num-badge">#{idx}</span>
@@ -179,48 +181,44 @@ def build_research_page() -> None:
         }}
     </style>
     <script>
-    const STORAGE_KEY = 'research_done_keys_v2';
-    function loadDone() {{
-        try {{ return JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]'); }} catch (e) {{ return []; }}
-    }}
-    function saveDone(done) {{ localStorage.setItem(STORAGE_KEY, JSON.stringify(done)); }}
-    function applySavedState() {{
-        const done = loadDone();
+    function moveCardByState(card) {{
         const openBox = document.getElementById('to-evaluate');
         const doneBox = document.getElementById('evaluated-container');
-        const placeholder = doneBox.querySelector('.empty-state');
-        if (placeholder) placeholder.remove();
+        const isDone = card.dataset.done === '1';
+        card.classList.toggle('done', isDone);
+        (isDone ? doneBox : openBox).appendChild(card);
+    }}
+    async function persistDone(key, status) {{
+        if (!window.location.origin.startsWith('http')) return;
+        try {{
+            await fetch('/api/research-state', {{
+                method: 'POST',
+                headers: {{ 'Content-Type': 'application/json' }},
+                body: JSON.stringify({{ item_key: key, status }}),
+            }});
+        }} catch (error) {{
+            console.log('research state sync failed', error);
+        }}
+    }}
+    function applySavedState(items = null) {{
+        const stateMap = items && typeof items === 'object' ? items : {{}};
         document.querySelectorAll('.research-card').forEach(card => {{
-            const isDone = done.includes(card.dataset.key);
-            card.classList.toggle('done', isDone);
-            card.dataset.done = isDone ? '1' : '0';
-            (isDone ? doneBox : openBox).appendChild(card);
+            const override = stateMap[card.dataset.key];
+            card.dataset.done = override?.status === 'done' || (!override && card.dataset.done === '1') ? '1' : '0';
+            moveCardByState(card);
         }});
         updateProgress();
         applyFilters();
         syncEmptyStates();
     }}
-    function toggleDone(card) {{
-        const done = loadDone();
-        const key = card.dataset.key;
-        const idx = done.indexOf(key);
-        const openBox = document.getElementById('to-evaluate');
-        const doneBox = document.getElementById('evaluated-container');
-        if (idx >= 0) {{
-            done.splice(idx, 1);
-            card.classList.remove('done');
-            card.dataset.done = '0';
-            openBox.appendChild(card);
-        }} else {{
-            done.push(key);
-            card.classList.add('done');
-            card.dataset.done = '1';
-            doneBox.appendChild(card);
-        }}
-        saveDone(done);
+    async function toggleDone(card) {{
+        const nextDone = card.dataset.done === '1' ? '0' : '1';
+        card.dataset.done = nextDone;
+        moveCardByState(card);
         updateProgress();
         syncEmptyStates();
         applyFilters();
+        await persistDone(card.dataset.key, nextDone === '1' ? 'done' : 'open');
     }}
     function updateProgress() {{
         const cards = Array.from(document.querySelectorAll('.research-card'));
@@ -256,13 +254,30 @@ def build_research_page() -> None:
         if (openPlaceholder) openPlaceholder.style.display = openVisible ? 'none' : '';
         if (donePlaceholder) donePlaceholder.style.display = doneVisible ? 'none' : '';
     }}
-    function resetProgress() {{
+    async function resetProgress() {{
         if (!confirm('Reset all research progress?')) return;
-        localStorage.removeItem(STORAGE_KEY);
-        applySavedState();
+        const cards = Array.from(document.querySelectorAll('.research-card'));
+        cards.forEach(card => {{
+            card.dataset.done = '0';
+            moveCardByState(card);
+        }});
+        updateProgress();
+        syncEmptyStates();
+        applyFilters();
+        await Promise.all(cards.map(card => persistDone(card.dataset.key, 'open')));
+    }}
+    async function hydrateFromApi() {{
+        if (!window.location.origin.startsWith('http')) return;
+        try {{
+            const response = await fetch('/api/research-state', {{ cache: 'no-store' }});
+            const payload = await response.json();
+            applySavedState(payload?.items || {{}});
+        }} catch (error) {{
+            console.log('research state hydrate failed', error);
+        }}
     }}
 
-    window.addEventListener('DOMContentLoaded', () => {{
+    window.addEventListener('DOMContentLoaded', async () => {{
         document.querySelectorAll('[data-chip-group]').forEach(group => {{
             group.addEventListener('click', (e) => {{
                 const chip = e.target.closest('.chip');
@@ -270,10 +285,15 @@ def build_research_page() -> None:
                 group.querySelectorAll('.chip').forEach(c => c.classList.remove('active'));
                 chip.classList.add('active');
                 applyFilters();
+                syncEmptyStates();
             }});
         }});
-        document.getElementById('research-search')?.addEventListener('input', applyFilters);
+        document.getElementById('research-search')?.addEventListener('input', () => {{
+            applyFilters();
+            syncEmptyStates();
+        }});
         applySavedState();
+        await hydrateFromApi();
     }});
     </script>
 </head>
@@ -313,7 +333,7 @@ def build_research_page() -> None:
             </div>
             <div class="empty-box" style="padding:22px 18px; text-align:left; line-height:1.7;">
                 • Click a card to mark it evaluated.<br>
-                • The browser stores your progress locally.<br>
+                • Progress syncs through the dashboard database and follows you across refreshes.<br>
                 • Use the filters to focus on Twitter/X, Web, Reddit, or Discord sources.<br>
                 • Search works across title, strategy, tools, takeaway, and results.
             </div>

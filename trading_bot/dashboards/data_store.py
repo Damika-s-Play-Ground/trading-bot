@@ -85,6 +85,13 @@ def ensure_schema() -> None:
                 raw TEXT NOT NULL
             );
 
+            CREATE TABLE IF NOT EXISTS research_state_overrides (
+                item_key TEXT PRIMARY KEY,
+                status TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                source TEXT DEFAULT 'dashboard'
+            );
+
             CREATE TABLE IF NOT EXISTS todo_items (
                 item_key TEXT PRIMARY KEY,
                 section TEXT NOT NULL,
@@ -282,6 +289,9 @@ def sync_research_entries(path: Path = RESEARCH_FILE) -> int:
                 ),
             )
             count += 1
+        conn.execute(
+            "DELETE FROM research_state_overrides WHERE item_key NOT IN (SELECT item_key FROM research_items)"
+        )
     return count
 
 
@@ -452,6 +462,7 @@ def load_cron_runs(limit: int = 80) -> list[dict[str, Any]]:
 
 def load_research_items(limit: int = 200) -> list[dict[str, Any]]:
     ensure_schema()
+    overrides = load_research_state_overrides()
     with _connect() as conn:
         rows = conn.execute(
             """
@@ -462,7 +473,57 @@ def load_research_items(limit: int = 200) -> list[dict[str, Any]]:
             """,
             (limit,),
         ).fetchall()
-    return [dict(row) for row in rows]
+    items = []
+    for row in rows:
+        item = dict(row)
+        item["status"] = "open"
+        override = overrides.get(str(item.get("item_key")))
+        if override:
+            item["status"] = override.get("status", "open")
+            item["status_updated_at"] = override.get("updated_at", "")
+            item["status_source"] = override.get("source", "dashboard")
+        items.append(item)
+    return items
+
+
+def load_research_state_overrides() -> dict[str, dict[str, Any]]:
+    ensure_schema()
+    with _connect() as conn:
+        rows = conn.execute(
+            "SELECT item_key, status, updated_at, source FROM research_state_overrides"
+        ).fetchall()
+    return {
+        str(row["item_key"]): {
+            "status": row["status"],
+            "updated_at": row["updated_at"],
+            "source": row["source"],
+        }
+        for row in rows
+    }
+
+
+def save_research_state(item_key: str, status: str, source: str = "dashboard") -> dict[str, Any]:
+    ensure_schema()
+    normalized_status = status if status in {"open", "done"} else "open"
+    updated_at = datetime.now(timezone.utc).isoformat()
+    with _connect() as conn:
+        conn.execute(
+            """
+            INSERT INTO research_state_overrides (item_key, status, updated_at, source)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT(item_key) DO UPDATE SET
+                status = excluded.status,
+                updated_at = excluded.updated_at,
+                source = excluded.source
+            """,
+            (item_key, normalized_status, updated_at, source),
+        )
+    return {
+        "item_key": item_key,
+        "status": normalized_status,
+        "updated_at": updated_at,
+        "source": source,
+    }
 
 
 def load_todo_state_overrides() -> dict[str, dict[str, Any]]:
