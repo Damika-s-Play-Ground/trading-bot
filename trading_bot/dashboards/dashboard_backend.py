@@ -298,10 +298,18 @@ def _bot_payload(manager_state: dict[str, Any], prices: dict[str, float], indica
                 "color": bot["color"],
                 "allocation_pct": round(_safe_float(allocations.get(bot["key"])), 2),
                 "value": round(total, 2),
+                "total_value": round(total, 2),
                 "usdt": round(usdt, 2),
                 "positions_value": round(positions_value, 2),
                 "positions_count": len(positions),
+                "position_count": len(positions),
                 "trade_count": len(trade_log),
+                "trades_24h": len([
+                    item
+                    for item in trade_log
+                    if ((trade_ts := parse_time(item.get("time"))) is not None)
+                    and (datetime.now(timezone.utc) - trade_ts).total_seconds() <= 86400
+                ]),
                 "target_capital": round(_safe_float(perf.get("target_capital", total)), 2),
                 "drift_pct": round(_safe_float(perf.get("drift_pct")), 2),
                 "win_rate": perf.get("win_rate"),
@@ -312,6 +320,7 @@ def _bot_payload(manager_state: dict[str, Any], prices: dict[str, float], indica
                 "realized_pnl_recent": perf.get("realized_pnl_recent"),
                 "unrealized_pnl": perf.get("unrealized_pnl"),
                 "portfolio_pct": 0.0,
+                "portfolio_share": 0.0,
                 "positions": sorted(
                     [
                         {
@@ -352,7 +361,9 @@ def _bot_payload(manager_state: dict[str, Any], prices: dict[str, float], indica
             }
         )
     for card in cards:
-        card["portfolio_pct"] = round((card["value"] / portfolio_total * 100), 2) if portfolio_total else 0.0
+        share = round((card["value"] / portfolio_total * 100), 2) if portfolio_total else 0.0
+        card["portfolio_pct"] = share
+        card["portfolio_share"] = share
     return cards
 
 
@@ -389,12 +400,19 @@ def _recent_trades_payload(cards: list[dict[str, Any]], manager_state: dict[str,
 
 def _chart_payload(cards: list[dict[str, Any]], performance_runs: list[dict[str, Any]]) -> dict[str, Any]:
     equity_points = []
-    for run in performance_runs[-60:]:
+    for run in performance_runs[-180:]:
         ts = parse_time(run.get("timestamp"))
+        local_label = ts.astimezone().strftime("%m-%d %H:%M") if ts else ""
         equity_points.append(
             {
-                "label": ts.astimezone().strftime("%m-%d %H:%M") if ts else "",
+                "label": local_label,
+                "display_label": local_label,
+                "timestamp": run.get("timestamp") or "",
                 "value": round(_safe_float(run.get("portfolio_total")), 2),
+                "regime": run.get("regime", ""),
+                "unrealized_pnl": round(_safe_float(run.get("unrealized_pnl")), 2),
+                "realized_pnl_recent": round(_safe_float(run.get("realized_pnl_recent")), 2),
+                "combined_loss_pct": round(_safe_float(run.get("combined_loss_pct")), 2),
             }
         )
     return {

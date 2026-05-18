@@ -205,7 +205,11 @@
         .chip { padding:8px 12px; border-radius:999px; background:#0f172a; border:1px solid #334155; color:#cbd5e1; font-size:12px; cursor:pointer; user-select:none; }
         .chip.active { background:#22c55e22; border-color:#22c55e55; color:#86efac; }
         .chip:hover { border-color:#475569; }
-        .chart-grid { display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-bottom:18px; }
+        .chart-grid { display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-bottom:18px; align-items:stretch; }
+        .chart-grid > * { min-width:0; }
+        .donut-card { min-height:100%; }
+        .donut-wrap { min-height:220px; }
+        .donut-svg { display:block; }
         .todo-board { margin-bottom:18px; }
         .todo-section { margin-bottom:16px; }
         .todo-section-header { display:flex; justify-content:space-between; gap:10px; flex-wrap:wrap; align-items:center; margin-bottom:12px; padding:0 2px; }

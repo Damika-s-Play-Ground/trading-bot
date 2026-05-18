@@ -23,9 +23,12 @@ from trading_bot.core.bot_runtime import (
     scale_trade_size,
 )
 
+REPO_ROOT = Path(__file__).resolve().parents[2]
+BASE_DIR = REPO_ROOT
+
 # === CONFIG ===
-CONFIG_PATH = Path(__file__).parent / "config.json"
-PAPER_FILE = Path(__file__).parent / "paper_state.json"
+CONFIG_PATH = BASE_DIR / "config.json"
+PAPER_FILE = BASE_DIR / "paper_state.json"
 
 with open(CONFIG_PATH) as f:
     config = json.load(f)

@@ -1,5 +1,5 @@
 const { createApp } = Vue;
-const DASHBOARD_CACHE_KEY = 'dashboard_payload_v2';
+const DASHBOARD_CACHE_KEY = 'dashboard_payload_v3';
 
 createApp({
   data() {
@@ -13,6 +13,10 @@ createApp({
       allocationHover: null,
       activityHover: null,
       equityHover: null,
+      equityRangeStart: '',
+      equityRangeEnd: '',
+      equityRangePreset: 'all',
+      equityZoom: 1,
       pollHandle: null,
     };
   },
@@ -27,53 +31,116 @@ createApp({
     todoStats() { return this.payload?.todo?.stats || {}; },
     allocationSegments() { return this.payload?.charts?.allocation || []; },
     activityRows() { return this.payload?.charts?.activity || []; },
-    equityPoints() { return this.payload?.charts?.equity || []; },
+    allEquityPoints() { return this.payload?.charts?.equity || []; },
     totalAllocation() {
       return this.allocationSegments.reduce((sum, item) => sum + Number(item.value || 0), 0);
     },
     activityMax() {
       return Math.max(1, ...this.activityRows.map(item => Number(item.value || 0)));
     },
-    lineChart() {
-      const points = this.equityPoints;
-      const width = 760;
-      const height = 250;
-      const left = 50;
-      const right = 18;
-      const top = 20;
-      const bottom = 32;
+    botTableRows() {
+      return [...this.bots].sort((a, b) => Number(b.value || 0) - Number(a.value || 0));
+    },
+    filteredEquityPoints() {
+      const startTs = this.equityRangeStart ? new Date(this.equityRangeStart).getTime() : null;
+      const endTs = this.equityRangeEnd ? new Date(this.equityRangeEnd).getTime() : null;
+      return this.allEquityPoints.filter(point => {
+        const ts = new Date(point.timestamp || point.label || '').getTime();
+        if (!Number.isFinite(ts)) return true;
+        if (startTs && ts < startTs) return false;
+        if (endTs && ts > endTs) return false;
+        return true;
+      });
+    },
+    visibleEquityPoints() {
+      const points = this.filteredEquityPoints;
+      if (!points.length) return [];
+      const zoom = Math.max(1, Number(this.equityZoom || 1));
+      if (zoom <= 1 || points.length <= 2) return points;
+      const windowSize = Math.max(6, Math.ceil(points.length / zoom));
+      return points.slice(Math.max(0, points.length - windowSize));
+    },
+    equityChart() {
+      const points = this.visibleEquityPoints;
+      const width = 920;
+      const height = 320;
+      const left = 64;
+      const right = 22;
+      const top = 22;
+      const bottom = 42;
       if (!points.length) {
-        return { width, height, points: [], area: '', ticks: [], labels: [], min: 0, max: 0, delta: 0 };
+        return {
+          width, height, left, right, top, bottom,
+          points: [], polyline: '', area: '', ticks: [], labels: [],
+          min: 0, max: 0, delta: 0, percentDelta: 0,
+          startValue: 0, endValue: 0, highValue: 0, lowValue: 0,
+          startLabel: '', endLabel: '',
+        };
       }
       const values = points.map(item => Number(item.value || 0));
       const min = Math.min(...values);
       const max = Math.max(...values);
-      const span = Math.max(max - min, 1);
-      const axisMin = min - span * 0.14;
-      const axisMax = max + span * 0.14;
+      const span = Math.max(max - min, Math.max(Math.abs(max), 1) * 0.02, 1);
+      const axisMin = min - span * 0.16;
+      const axisMax = max + span * 0.16;
       const usableW = width - left - right;
       const usableH = height - top - bottom;
       const step = points.length > 1 ? usableW / (points.length - 1) : 0;
+      const highValue = max;
+      const lowValue = min;
       const mapped = points.map((item, idx) => {
         const value = Number(item.value || 0);
         const x = left + idx * step;
         const y = top + ((axisMax - value) / Math.max(axisMax - axisMin, 1e-6)) * usableH;
-        return { ...item, x, y, value, idx };
+        const ts = new Date(item.timestamp || item.label || '').getTime();
+        return { ...item, x, y, value, idx, ts };
       });
       const polyline = mapped.map(item => `${item.x.toFixed(2)},${item.y.toFixed(2)}`).join(' ');
       const area = mapped.length
         ? `${polyline} ${mapped[mapped.length - 1].x.toFixed(2)},${(top + usableH).toFixed(2)} ${left},${(top + usableH).toFixed(2)}`
         : '';
-      const ticks = [0, 0.25, 0.5, 0.75, 1].map(frac => {
-        const value = axisMax - (axisMax - axisMin) * frac;
-        return {
-          y: top + usableH * frac,
-          value,
-        };
-      });
+      const ticks = [0, 0.25, 0.5, 0.75, 1].map(frac => ({
+        y: top + usableH * frac,
+        value: axisMax - (axisMax - axisMin) * frac,
+      }));
       const labelStep = Math.max(1, Math.floor(points.length / 6));
       const labels = mapped.filter(item => item.idx % labelStep === 0 || item.idx === mapped.length - 1);
-      return { width, height, left, right, top, bottom, points: mapped, polyline, area, ticks, labels, min, max, delta: values[values.length - 1] - values[0] };
+      const startValue = values[0];
+      const endValue = values[values.length - 1];
+      const delta = endValue - startValue;
+      const percentDelta = startValue ? (delta / startValue) * 100 : 0;
+      return {
+        width, height, left, right, top, bottom,
+        points: mapped,
+        polyline,
+        area,
+        ticks,
+        labels,
+        min,
+        max,
+        delta,
+        percentDelta,
+        startValue,
+        endValue,
+        highValue,
+        lowValue,
+        startLabel: mapped[0]?.display_label || mapped[0]?.label || '',
+        endLabel: mapped[mapped.length - 1]?.display_label || mapped[mapped.length - 1]?.label || '',
+      };
+    },
+    equityStats() {
+      const chart = this.equityChart;
+      return [
+        { label: 'Visible points', value: String(chart.points.length || 0) },
+        { label: 'Start', value: chart.points.length ? this.formatMoney(chart.startValue) : '—' },
+        { label: 'End', value: chart.points.length ? this.formatMoney(chart.endValue) : '—' },
+        { label: 'High', value: chart.points.length ? this.formatMoney(chart.highValue) : '—' },
+        { label: 'Low', value: chart.points.length ? this.formatMoney(chart.lowValue) : '—' },
+        { label: 'Change', value: chart.points.length ? `${this.formatMoney(chart.delta)} · ${this.formatPct(chart.percentDelta)}` : '—' },
+      ];
+    },
+    activeEquityPoint() {
+      return this.equityHover || this.equityChart.points[this.equityChart.points.length - 1] || null;
     },
   },
   methods: {
@@ -82,11 +149,26 @@ createApp({
         const cached = JSON.parse(window.localStorage.getItem(DASHBOARD_CACHE_KEY) || 'null');
         if (!cached || !cached.payload) return false;
         this.payload = cached.payload;
+        this.initializeEquityControls();
         this.loading = false;
         return true;
       } catch (error) {
         return false;
       }
+    },
+    initializeEquityControls() {
+      if (!this.allEquityPoints.length) {
+        this.equityRangeStart = '';
+        this.equityRangeEnd = '';
+        this.equityRangePreset = 'all';
+        this.equityZoom = 1;
+        return;
+      }
+      const first = this.toDateTimeLocalValue(this.allEquityPoints[0]?.timestamp || this.allEquityPoints[0]?.label || '');
+      const last = this.toDateTimeLocalValue(this.allEquityPoints[this.allEquityPoints.length - 1]?.timestamp || this.allEquityPoints[this.allEquityPoints.length - 1]?.label || '');
+      if (!this.equityRangeStart) this.equityRangeStart = first;
+      if (!this.equityRangeEnd) this.equityRangeEnd = last;
+      if (!['24h', '7d', '30d', 'all', 'custom'].includes(this.equityRangePreset)) this.equityRangePreset = 'all';
     },
     async loadDashboard(options = {}) {
       const showLoading = options.showLoading ?? !this.payload;
@@ -96,6 +178,7 @@ createApp({
         const response = await fetch('/api/dashboard-data', { cache: 'no-store' });
         if (!response.ok) throw new Error(`dashboard data request failed (${response.status})`);
         this.payload = await response.json();
+        this.initializeEquityControls();
         window.localStorage.setItem(DASHBOARD_CACHE_KEY, JSON.stringify({ ts: Date.now(), payload: this.payload }));
       } catch (error) {
         console.error(error);
@@ -134,6 +217,10 @@ createApp({
     shortPct(value, digits = 1) {
       return `${Number(value || 0).toFixed(digits)}%`;
     },
+    formatQty(value) {
+      const n = Number(value || 0);
+      return n.toLocaleString(undefined, { maximumFractionDigits: 6 });
+    },
     relativeTime(value) {
       if (!value) return '—';
       const ts = new Date(value).getTime();
@@ -141,13 +228,26 @@ createApp({
       const diffSec = Math.max(0, Math.floor((Date.now() - ts) / 1000));
       if (diffSec < 60) return `${diffSec}s ago`;
       if (diffSec < 3600) return `${Math.floor(diffSec / 60)}m ago`;
-      return `${Math.floor(diffSec / 3600)}h ${Math.floor((diffSec % 3600) / 60)}m ago`;
+      if (diffSec < 86400) return `${Math.floor(diffSec / 3600)}h ${Math.floor((diffSec % 3600) / 60)}m ago`;
+      return `${Math.floor(diffSec / 86400)}d ${Math.floor((diffSec % 86400) / 3600)}h ago`;
     },
     formatTime(value) {
       if (!value) return '—';
       const dt = new Date(value);
       if (Number.isNaN(dt.getTime())) return '—';
       return dt.toLocaleString();
+    },
+    toDateTimeLocalValue(value) {
+      if (!value) return '';
+      const dt = new Date(value);
+      if (Number.isNaN(dt.getTime())) return '';
+      const pad = num => String(num).padStart(2, '0');
+      const year = dt.getFullYear();
+      const month = pad(dt.getMonth() + 1);
+      const day = pad(dt.getDate());
+      const hour = pad(dt.getHours());
+      const minute = pad(dt.getMinutes());
+      return `${year}-${month}-${day}T${hour}:${minute}`;
     },
     openBotModal(key) {
       this.activeBotKey = key;
@@ -173,14 +273,47 @@ createApp({
       }
       return -cursor;
     },
+    setEquityPreset(preset) {
+      this.equityRangePreset = preset;
+      const points = this.allEquityPoints;
+      if (!points.length) return;
+      const lastTs = new Date(points[points.length - 1].timestamp || points[points.length - 1].label || '').getTime();
+      const firstValue = this.toDateTimeLocalValue(points[0].timestamp || points[0].label || '');
+      const lastValue = this.toDateTimeLocalValue(points[points.length - 1].timestamp || points[points.length - 1].label || '');
+      if (preset === 'all') {
+        this.equityRangeStart = firstValue;
+        this.equityRangeEnd = lastValue;
+      } else {
+        const hours = preset === '24h' ? 24 : preset === '7d' ? 24 * 7 : 24 * 30;
+        const start = new Date(lastTs - hours * 60 * 60 * 1000);
+        const startValue = this.toDateTimeLocalValue(start.toISOString());
+        this.equityRangeStart = startValue || firstValue;
+        this.equityRangeEnd = lastValue;
+      }
+    },
+    onEquityRangeChange() {
+      this.equityRangePreset = 'custom';
+      const startTs = this.equityRangeStart ? new Date(this.equityRangeStart).getTime() : null;
+      const endTs = this.equityRangeEnd ? new Date(this.equityRangeEnd).getTime() : null;
+      if (startTs && endTs && startTs > endTs) {
+        this.equityRangeEnd = this.equityRangeStart;
+      }
+    },
+    zoomInEquity() {
+      this.equityZoom = Math.min(16, Number(this.equityZoom || 1) * 2);
+    },
+    zoomOutEquity() {
+      this.equityZoom = Math.max(1, Number(this.equityZoom || 1) / 2);
+    },
+    resetEquityView() {
+      this.equityZoom = 1;
+      this.setEquityPreset('all');
+    },
     equityHoverPoint(point) {
       this.equityHover = point;
     },
     clearEquityHover() {
       this.equityHover = null;
-    },
-    activeEquityPoint() {
-      return this.equityHover || this.lineChart.points[this.lineChart.points.length - 1] || null;
     },
     activityWidth(item) {
       return `${(Number(item.value || 0) / this.activityMax) * 100}%`;
@@ -210,9 +343,21 @@ createApp({
       return `sev-${level || 'warning'}`;
     },
     chartInsight() {
-      const active = this.activeEquityPoint();
-      if (!active) return 'Waiting for more journal history';
-      return `${active.label || 'Latest'} · ${this.formatMoney(active.value)} · Δ ${this.formatMoney(this.lineChart.delta)}`;
+      const active = this.activeEquityPoint;
+      const points = this.equityChart.points;
+      if (!active || !points.length) return 'Waiting for more journal history';
+      const regime = active.regime ? ` · ${String(active.regime).toUpperCase()}` : '';
+      const unrealized = active.unrealized_pnl != null ? ` · Unrealized ${this.formatMoney(active.unrealized_pnl)}` : '';
+      return `${active.display_label || active.label || 'Latest'} · ${this.formatMoney(active.value)} · Δ ${this.formatMoney(this.equityChart.delta)} (${this.formatPct(this.equityChart.percentDelta)})${regime}${unrealized}`;
+    },
+    tradeSnapshotChips(trade) {
+      if (!trade?.indicators) return [];
+      return [
+        { label: 'RSI', value: Number(trade.indicators.rsi).toFixed(1), tone: this.indicatorTone(trade.indicators.rsi, 'rsi') },
+        { label: 'MACD', value: Number(trade.indicators.macd_hist).toFixed(4), tone: this.indicatorTone(trade.indicators.macd_hist, 'macd') },
+        { label: 'MA20', value: this.formatMoney(trade.indicators.ma20, Number(trade.indicators.ma20) < 1 ? 5 : 2), tone: '' },
+        { label: 'Vol', value: `${Number(trade.indicators.volume_ratio).toFixed(2)}x`, tone: this.indicatorTone(trade.indicators.volume_ratio, 'vol') },
+      ];
     },
   },
   mounted() {
@@ -231,7 +376,7 @@ createApp({
     <div class="page-header">
       <div>
         <h1 class="page-title">📊 Multi-Bot Trading Dashboard</h1>
-        <p class="page-subtitle">Vue-powered Flask dashboard with live portfolio analytics, cleaner drill-down bot cards, synced TODO state, and denser recent-trade snapshots.</p>
+        <p class="page-subtitle">Vue-powered Flask dashboard with live portfolio analytics, denser tables, richer bot drill-downs, and an upgraded interactive equity explorer.</p>
       </div>
       <div class="header-actions">
         <button class="btn" @click="refreshPages" :disabled="refreshBusy">{{ refreshBusy ? 'Refreshing…' : 'Refresh generated pages' }}</button>
@@ -321,34 +466,74 @@ createApp({
           </div>
         </div>
 
-        <div class="chart-card">
-          <div class="chart-head">
+        <div class="chart-card chart-card-wide">
+          <div class="chart-head chart-head-stack">
             <div>
-              <div class="chart-title">Equity curve</div>
-              <div class="chart-subtitle">Clearer history with gradient fill, axis guides, and point hover states</div>
+              <div class="chart-title">Equity curve explorer</div>
+              <div class="chart-subtitle">Date-range filtering, zoom controls, richer hover state, and more context from each performance snapshot</div>
             </div>
             <div class="chart-tooltip">{{ chartInsight() }}</div>
           </div>
-          <div v-if="!lineChart.points.length" class="empty-state">Not enough performance-journal data yet.</div>
-          <svg v-else class="chart-svg" :viewBox="'0 0 ' + lineChart.width + ' ' + lineChart.height" preserveAspectRatio="none">
-            <g v-for="tick in lineChart.ticks" :key="tick.y">
-              <line class="chart-gridline" :x1="lineChart.left" :x2="lineChart.width - lineChart.right" :y1="tick.y" :y2="tick.y"></line>
-              <text class="chart-axis" x="8" :y="tick.y + 4">{{ formatMoney(tick.value) }}</text>
-            </g>
-            <defs>
-              <linearGradient id="equity-fill" x1="0" x2="0" y1="0" y2="1">
-                <stop offset="0%" stop-color="#60a5fa" stop-opacity="0.42"></stop>
-                <stop offset="100%" stop-color="#60a5fa" stop-opacity="0.03"></stop>
-              </linearGradient>
-            </defs>
-            <polygon :points="lineChart.area" fill="url(#equity-fill)"></polygon>
-            <polyline :points="lineChart.polyline" fill="none" stroke="#60a5fa" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"></polyline>
-            <g v-for="point in lineChart.points" :key="point.idx" @mouseenter="equityHoverPoint(point)" @mouseleave="clearEquityHover">
-              <line :x1="point.x" :x2="point.x" :y1="lineChart.top" :y2="lineChart.height - lineChart.bottom" stroke="#94a3b8" stroke-dasharray="4 5" :opacity="equityHover && equityHover.idx === point.idx ? 1 : 0"></line>
-              <circle :cx="point.x" :cy="point.y" :r="equityHover && equityHover.idx === point.idx ? 6 : 4.6" fill="#60a5fa" stroke="#0f172a" stroke-width="2.2"></circle>
-            </g>
-            <text class="chart-axis" v-for="label in lineChart.labels" :key="label.idx" :x="label.x" :y="lineChart.height - 10" text-anchor="middle">{{ label.label }}</text>
-          </svg>
+
+          <div class="equity-toolbar">
+            <div class="toolbar-group">
+              <button class="mini-btn" :class="{ active: equityRangePreset === '24h' }" @click="setEquityPreset('24h')">24H</button>
+              <button class="mini-btn" :class="{ active: equityRangePreset === '7d' }" @click="setEquityPreset('7d')">7D</button>
+              <button class="mini-btn" :class="{ active: equityRangePreset === '30d' }" @click="setEquityPreset('30d')">30D</button>
+              <button class="mini-btn" :class="{ active: equityRangePreset === 'all' }" @click="setEquityPreset('all')">All</button>
+            </div>
+            <div class="toolbar-group toolbar-group-inputs">
+              <label class="input-stack">
+                <span>Start</span>
+                <input type="datetime-local" class="range-input" v-model="equityRangeStart" @change="onEquityRangeChange" />
+              </label>
+              <label class="input-stack">
+                <span>End</span>
+                <input type="datetime-local" class="range-input" v-model="equityRangeEnd" @change="onEquityRangeChange" />
+              </label>
+            </div>
+            <div class="toolbar-group">
+              <button class="mini-btn" @click="zoomOutEquity">− Zoom out</button>
+              <button class="mini-btn" @click="resetEquityView">Reset</button>
+              <button class="mini-btn" @click="zoomInEquity">＋ Zoom in</button>
+            </div>
+          </div>
+
+          <div class="equity-stats-grid">
+            <div class="mini-stat" v-for="stat in equityStats" :key="stat.label">
+              <div class="mini-stat-label">{{ stat.label }}</div>
+              <div class="mini-stat-value">{{ stat.value }}</div>
+            </div>
+          </div>
+
+          <div v-if="!equityChart.points.length" class="empty-state">Not enough performance-journal data yet for the selected range.</div>
+          <div v-else class="equity-chart-shell">
+            <svg class="chart-svg chart-svg-tall" :viewBox="'0 0 ' + equityChart.width + ' ' + equityChart.height" preserveAspectRatio="none">
+              <g v-for="tick in equityChart.ticks" :key="tick.y">
+                <line class="chart-gridline" :x1="equityChart.left" :x2="equityChart.width - equityChart.right" :y1="tick.y" :y2="tick.y"></line>
+                <text class="chart-axis" x="10" :y="tick.y + 4">{{ formatMoney(tick.value) }}</text>
+              </g>
+              <defs>
+                <linearGradient id="equity-fill" x1="0" x2="0" y1="0" y2="1">
+                  <stop offset="0%" stop-color="#60a5fa" stop-opacity="0.40"></stop>
+                  <stop offset="100%" stop-color="#60a5fa" stop-opacity="0.03"></stop>
+                </linearGradient>
+              </defs>
+              <polygon :points="equityChart.area" fill="url(#equity-fill)"></polygon>
+              <polyline :points="equityChart.polyline" fill="none" stroke="#60a5fa" stroke-width="3.6" stroke-linecap="round" stroke-linejoin="round"></polyline>
+              <g v-for="point in equityChart.points" :key="point.idx" @mouseenter="equityHoverPoint(point)" @mouseleave="clearEquityHover">
+                <line :x1="point.x" :x2="point.x" :y1="equityChart.top" :y2="equityChart.height - equityChart.bottom" stroke="#94a3b8" stroke-dasharray="4 5" :opacity="activeEquityPoint && activeEquityPoint.idx === point.idx ? 1 : 0"></line>
+                <circle :cx="point.x" :cy="point.y" :r="activeEquityPoint && activeEquityPoint.idx === point.idx ? 6.6 : 4.5" fill="#60a5fa" stroke="#0f172a" stroke-width="2.4"></circle>
+              </g>
+              <g v-if="activeEquityPoint">
+                <rect :x="Math.max(equityChart.left, Math.min(activeEquityPoint.x - 85, equityChart.width - 180))" :y="Math.max(10, activeEquityPoint.y - 62)" width="170" height="50" rx="12" fill="rgba(15,23,42,.96)" stroke="rgba(96,165,250,.48)"></rect>
+                <text :x="Math.max(equityChart.left + 10, Math.min(activeEquityPoint.x - 75, equityChart.width - 170))" :y="Math.max(28, activeEquityPoint.y - 38)" fill="#cbd5e1" font-size="11" font-weight="700">{{ activeEquityPoint.display_label || activeEquityPoint.label }}</text>
+                <text :x="Math.max(equityChart.left + 10, Math.min(activeEquityPoint.x - 75, equityChart.width - 170))" :y="Math.max(46, activeEquityPoint.y - 20)" fill="#eff6ff" font-size="12.5" font-weight="800">{{ formatMoney(activeEquityPoint.value) }}</text>
+                <text :x="Math.max(equityChart.left + 10, Math.min(activeEquityPoint.x - 75, equityChart.width - 170))" :y="Math.max(62, activeEquityPoint.y - 4)" fill="#93c5fd" font-size="10.5">{{ activeEquityPoint.regime ? String(activeEquityPoint.regime).toUpperCase() : 'Portfolio snapshot' }}</text>
+              </g>
+              <text class="chart-axis" v-for="label in equityChart.labels" :key="label.idx" :x="label.x" :y="equityChart.height - 12" text-anchor="middle">{{ label.display_label || label.label }}</text>
+            </svg>
+          </div>
         </div>
 
         <div class="chart-card">
@@ -380,114 +565,120 @@ createApp({
       <div class="section-card">
         <div class="section-head">
           <div>
-            <h2>🤖 Bot cards with drill-downs</h2>
-            <div class="section-note">Cards stay compact by default, show value/share up front, and open richer detail in a focused modal instead of stretching the grid.</div>
+            <h2>🤖 Bot drill-down table</h2>
+            <div class="section-note">Each bot now stays in a compact table row. Click any row to open the full modal with signals, positions, and recent reasons.</div>
           </div>
         </div>
-        <div class="bots-grid">
-          <div class="bot-card" v-for="bot in bots" :key="bot.key" :class="{ open: activeBotKey === bot.key }" :style="{ borderLeft: '4px solid ' + bot.color }" @click="openBotModal(bot.key)">
-            <div class="bot-top">
-              <div class="bot-name-wrap">
-                <div class="bot-icon">{{ bot.icon }}</div>
-                <div>
-                  <div class="bot-name">{{ bot.name }}</div>
-                  <div class="section-note">{{ bot.signal_hint }}</div>
-                </div>
-              </div>
-              <div class="bot-badges">
-                <span class="badge">Target {{ shortPct(bot.allocation_pct) }}</span>
-                <span class="badge">Portfolio {{ shortPct(bot.portfolio_pct) }}</span>
-              </div>
-            </div>
-            <div class="bot-stats">
-              <div class="bot-stat">
-                <div class="k">Value</div>
-                <div class="v">{{ formatMoney(bot.value) }}</div>
-                <div class="s">{{ formatMoney(bot.value) }} · {{ shortPct(bot.portfolio_pct) }} of portfolio</div>
-              </div>
-              <div class="bot-stat">
-                <div class="k">Cash</div>
-                <div class="v">{{ formatMoney(bot.usdt) }}</div>
-                <div class="s">Positions {{ formatMoney(bot.positions_value) }}</div>
-              </div>
-              <div class="bot-stat">
-                <div class="k">Drift</div>
-                <div class="v" :class="bot.drift_pct <= 0 ? 'green' : 'red'">{{ formatPct(bot.drift_pct) }}</div>
-                <div class="s">Target {{ formatMoney(bot.target_capital) }}</div>
-              </div>
-              <div class="bot-stat">
-                <div class="k">Trades</div>
-                <div class="v">{{ bot.trade_count }}</div>
-                <div class="s">Open positions {{ bot.positions_count }}</div>
-              </div>
-              <div class="bot-stat">
-                <div class="k">Win rate</div>
-                <div class="v">{{ bot.win_rate == null ? '—' : shortPct(bot.win_rate) }}</div>
-                <div class="s">Profit factor {{ bot.profit_factor ?? '—' }}</div>
-              </div>
-              <div class="bot-stat">
-                <div class="k">Last trade</div>
-                <div class="v">{{ bot.last_trade.coin || '—' }} {{ bot.last_trade.action || '' }}</div>
-                <div class="s">{{ relativeTime(bot.last_trade.time) }} · tap for drill-down</div>
-              </div>
-            </div>
-            <div class="bot-drilldown-toggle">
-              <span>{{ activeBotKey === bot.key ? 'Details open' : 'Open details' }}</span>
-              <span class="caret">↗</span>
-            </div>
-          </div>
+        <div class="table-shell">
+          <table class="data-table bot-table">
+            <thead>
+              <tr>
+                <th>Bot</th>
+                <th>Signal</th>
+                <th>Value</th>
+                <th>Cash</th>
+                <th>Positions</th>
+                <th>Drift</th>
+                <th>Trades</th>
+                <th>Win rate</th>
+                <th>Target</th>
+                <th>Last trade</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="bot in botTableRows" :key="bot.key" class="clickable-row" @click="openBotModal(bot.key)">
+                <td>
+                  <div class="row-title-cell">
+                    <span class="bot-icon">{{ bot.icon }}</span>
+                    <div>
+                      <div class="row-title">{{ bot.name }}</div>
+                      <div class="row-sub">Portfolio {{ shortPct(bot.portfolio_pct) }} · Allocation {{ shortPct(bot.allocation_pct) }}</div>
+                    </div>
+                  </div>
+                </td>
+                <td>
+                  <div class="cell-wrap">
+                    <div class="signal-line">{{ bot.signal_hint }}</div>
+                  </div>
+                </td>
+                <td>{{ formatMoney(bot.value) }}</td>
+                <td>
+                  <div>{{ formatMoney(bot.usdt) }}</div>
+                  <div class="cell-sub">Pos {{ formatMoney(bot.positions_value) }}</div>
+                </td>
+                <td>{{ bot.positions_count }}</td>
+                <td :class="bot.drift_pct <= 0 ? 'green' : 'red'">{{ formatPct(bot.drift_pct) }}</td>
+                <td>
+                  <div>{{ bot.trade_count }}</div>
+                  <div class="cell-sub">24h {{ bot.last_run?.signals_found ?? '—' }} signals</div>
+                </td>
+                <td>{{ bot.win_rate == null ? '—' : shortPct(bot.win_rate) }}</td>
+                <td>{{ formatMoney(bot.target_capital) }}</td>
+                <td>
+                  <div>{{ bot.last_trade.coin || '—' }} {{ bot.last_trade.action || '' }}</div>
+                  <div class="cell-sub">{{ relativeTime(bot.last_trade.time) }} · click for details</div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
         </div>
       </div>
 
       <div class="section-card">
         <div class="section-head">
           <div>
-            <h2>🔄 Recent trades</h2>
-            <div class="section-note">Reloads paint from cached data first, then refresh in place with the latest reason and indicator context.</div>
+            <h2>🔄 Recent trades details</h2>
+            <div class="section-note">Converted into a denser table so rows scan faster while still showing reason and live indicator context.</div>
           </div>
         </div>
-        <div class="trade-grid">
-          <div class="trade-card" v-for="trade in recentTrades" :key="trade.time + trade.bot + trade.coin + trade.action">
-            <div class="trade-top">
-              <div class="trade-main">
-                <span class="trade-time">{{ relativeTime(trade.time) }}</span>
-                <span class="trade-bot" :style="{ borderColor: trade.bot_color }">{{ trade.bot }}</span>
-                <span class="trade-action" :class="tradeActionClass(trade.action)">{{ trade.action }}</span>
-                <span class="trade-coin">{{ trade.coin }}</span>
-              </div>
-              <div class="trade-values">
-                <span class="badge">@ {{ formatMoney(trade.price, trade.price < 1 ? 5 : 2) }}</span>
-                <span class="badge" v-if="trade.usdt">{{ formatMoney(trade.usdt) }}</span>
-                <span class="badge" v-if="trade.pnl !== null && trade.pnl !== undefined" :class="trade.pnl >= 0 ? 'green' : 'red'">PnL {{ formatMoney(trade.pnl) }}</span>
-              </div>
-            </div>
-            <div class="trade-row-body">
-              <div class="trade-reason">{{ trade.reason }}</div>
-              <div class="indicator-grid" v-if="trade.indicators">
-                <div class="indicator-card">
-                  <div class="indicator-label">RSI</div>
-                  <div class="indicator-value">{{ Number(trade.indicators.rsi).toFixed(1) }}</div>
-                  <div class="indicator-sub">Momentum pressure</div>
-                </div>
-                <div class="indicator-card">
-                  <div class="indicator-label">MACD hist</div>
-                  <div class="indicator-value" :class="indicatorTone(trade.indicators.macd_hist, 'macd')">{{ Number(trade.indicators.macd_hist).toFixed(4) }}</div>
-                  <div class="indicator-sub">vs signal {{ Number(trade.indicators.macd_signal).toFixed(4) }}</div>
-                </div>
-                <div class="indicator-card">
-                  <div class="indicator-label">MA context</div>
-                  <div class="indicator-value">20 {{ formatMoney(trade.indicators.ma20, trade.indicators.ma20 < 1 ? 5 : 2) }}</div>
-                  <div class="indicator-sub">50 {{ formatMoney(trade.indicators.ma50, trade.indicators.ma50 < 1 ? 5 : 2) }}</div>
-                </div>
-                <div class="indicator-card">
-                  <div class="indicator-label">Volume</div>
-                  <div class="indicator-value" :class="indicatorTone(trade.indicators.volume_ratio, 'vol')">{{ Number(trade.indicators.volume_ratio).toFixed(2) }}x</div>
-                  <div class="indicator-sub">{{ formatMoney(trade.indicators.volume, 0) }} vs 20-bar avg</div>
-                </div>
-              </div>
-              <div v-else class="empty-state">Indicator snapshot unavailable for this trade.</div>
-            </div>
-          </div>
+        <div class="table-shell">
+          <table class="data-table trades-table">
+            <thead>
+              <tr>
+                <th>Time</th>
+                <th>Bot</th>
+                <th>Side</th>
+                <th>Coin</th>
+                <th>Price</th>
+                <th>Qty</th>
+                <th>Notional</th>
+                <th>PnL</th>
+                <th>Reason</th>
+                <th>Market snapshot</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="trade in recentTrades" :key="trade.time + trade.bot + trade.coin + trade.action">
+                <td>
+                  <div>{{ relativeTime(trade.time) }}</div>
+                  <div class="cell-sub">{{ formatTime(trade.time) }}</div>
+                </td>
+                <td>
+                  <span class="table-pill outline" :style="{ borderColor: trade.bot_color, color: '#e2e8f0' }">{{ trade.bot }}</span>
+                </td>
+                <td>
+                  <span class="table-pill" :class="tradeActionClass(trade.action)">{{ trade.action }}</span>
+                </td>
+                <td><strong>{{ trade.coin }}</strong></td>
+                <td>{{ formatMoney(trade.price, trade.price < 1 ? 5 : 2) }}</td>
+                <td>{{ formatQty(trade.qty) }}</td>
+                <td>{{ trade.usdt ? formatMoney(trade.usdt) : '—' }}</td>
+                <td :class="trade.pnl == null ? '' : (trade.pnl >= 0 ? 'green' : 'red')">{{ trade.pnl == null ? '—' : formatMoney(trade.pnl) }}</td>
+                <td>
+                  <div class="reason-cell">{{ trade.reason }}</div>
+                </td>
+                <td>
+                  <div v-if="trade.indicators" class="snapshot-grid">
+                    <span v-for="chip in tradeSnapshotChips(trade)" :key="chip.label" class="snapshot-chip" :class="chip.tone">
+                      <strong>{{ chip.label }}</strong>
+                      <span>{{ chip.value }}</span>
+                    </span>
+                  </div>
+                  <div v-else class="cell-sub">No indicator snapshot</div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
         </div>
       </div>
 
