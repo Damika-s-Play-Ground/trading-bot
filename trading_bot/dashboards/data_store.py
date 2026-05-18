@@ -264,7 +264,16 @@ def sync_research_entries(path: Path = RESEARCH_FILE) -> int:
     text = path.read_text()
     entries = _parse_research_entries(text)
     count = 0
+    item_keys = [_hash_key(entry.get("date", ""), entry.get("title", "")) for entry in entries]
     with _connect() as conn:
+        if item_keys:
+            placeholders = ", ".join("?" for _ in item_keys)
+            conn.execute(
+                f"DELETE FROM research_items WHERE item_key NOT IN ({placeholders})",
+                item_keys,
+            )
+        else:
+            conn.execute("DELETE FROM research_items")
         for entry in entries:
             details = entry.get("details", {}) if isinstance(entry.get("details"), dict) else {}
             item_key = _hash_key(entry.get("date", ""), entry.get("title", ""))
