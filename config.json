@@ -1,5 +1,5 @@
 {
-  "coins": ["BTC","ETH","SOL","BNB","XRP","LINK","ADA","AVAX","DOT","NEAR","ARB","OP","AAVE","IMX","ALGO","FIL","GRT","VET","HBAR","XLM","ATOM"],
+  "coins": ["BTC", "ETH", "SOL", "BNB", "XRP", "LINK", "ADA", "AVAX", "DOT", "NEAR", "ARB", "OP", "AAVE", "IMX", "ALGO", "FIL", "GRT", "VET", "HBAR", "XLM", "ATOM"],
   "weights": {
     "performance_weighting": true,
     "tiers": {
@@ -50,6 +50,25 @@
     "fear_greed_max": 70,
     "fear_greed_boost": 25,
     "fear_greed_boost_multiplier": 1.5
+  },
+  "atr_risk": {
+    "period": 14,
+    "risk_per_trade_pct": 0.55,
+    "stop_atr_multiple": 1.9,
+    "take_profit_atr_multiple": 3.4,
+    "take_profit_tier_atr_multipliers": [2.2, 4.0],
+    "trailing_activation_atr_multiple": 1.8,
+    "trailing_distance_atr_multiple": 1.0,
+    "min_stop_loss_pct": 3.5,
+    "max_stop_loss_pct": 10.0,
+    "min_take_profit_pct": 5.0,
+    "max_take_profit_pct": 18.0,
+    "min_trailing_activation_pct": 4.0,
+    "max_trailing_activation_pct": 12.0,
+    "min_trailing_distance_pct": 1.5,
+    "max_trailing_distance_pct": 5.0,
+    "min_position_multiplier": 0.7,
+    "max_position_multiplier": 1.4
   },
   "paper_trading": true,
   "initial_balance": 1200.0,

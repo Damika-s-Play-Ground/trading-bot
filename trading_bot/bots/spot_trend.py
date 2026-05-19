@@ -11,6 +11,7 @@ import json, urllib.request, time, math
 from pathlib import Path
 from datetime import datetime, timezone
 
+from trading_bot.core.atr_risk import calculate_atr, normalize_position_size, resolve_atr_exit_profile
 from trading_bot.core.bot_runtime import (
     get_available_budget,
     get_blocked_coins,
@@ -26,27 +27,31 @@ BASE_DIR = REPO_ROOT
 PAPER_FILE = BASE_DIR / "paper_trend.json"
 CONFIG_FILE = BASE_DIR / "config_trend.json"
 
-# Default config
 CONFIG = {
     "coins": ["BTC","ETH","SOL","BNB","XRP","LINK","ADA","AVAX","DOT","NEAR"],
-    "trend_ma": 50,          # Must be above this MA to be "in trend"
-    "exit_ma": 20,           # Sell when price crosses below this
+    "trend_ma": 50,
+    "exit_ma": 20,
     "macd_fast": 12,
     "macd_slow": 26,
     "macd_signal": 9,
-    "buy_per_trade": 10.0,   # Slightly bigger buys for trend
-    "max_positions": 5,      # Fewer positions, bigger bets
-    "take_profit_pct": 15.0, # Trend trades target bigger gains
-    "stop_loss_pct": -8.0,   # Tighter SL (trend can reverse fast)
+    "buy_per_trade": 10.0,
+    "max_positions": 5,
+    "take_profit_pct": 15.0,
+    "stop_loss_pct": -8.0,
     "trailing_activation": 5.0,
     "trailing_distance": 3.0,
-    "initial_balance": 600.0, # Half of total capital for this bot
+    "initial_balance": 600.0,
     "min_volume": 50000,
+    "atr_risk": {"period": 14, "risk_per_trade_pct": 0.75, "stop_atr_multiple": 2.1,
+        "take_profit_atr_multiple": 4.0, "trailing_activation_atr_multiple": 2.4,
+        "trailing_distance_atr_multiple": 1.2, "min_stop_loss_pct": 3.5,
+        "max_stop_loss_pct": 10.0, "min_take_profit_pct": 6.0, "max_take_profit_pct": 22.0,
+        "min_trailing_activation_pct": 4.0, "max_trailing_activation_pct": 12.0,
+        "min_trailing_distance_pct": 1.5, "max_trailing_distance_pct": 5.0,
+        "min_position_multiplier": 0.65, "max_position_multiplier": 1.4},
 }
 
-# Load/save config
 CONFIG.update(load_json_path(CONFIG_FILE, {}))
-
 CONFIG["initial_balance"] = get_target_capital(CONFIG["initial_balance"])
 
 
@@ -61,13 +66,31 @@ def order_book_settings():
         "fail_closed": CONFIG.get("order_book_fail_closed", True),
     }
 
-# Helpers
+
+def atr_settings():
+    return CONFIG.get("atr_risk", {})
+
+
+def build_risk_profile(price, klines):
+    atr_value = calculate_atr(klines, period=atr_settings().get("period", 14))
+    return resolve_atr_exit_profile(
+        price=price,
+        atr_value=atr_value,
+        settings=atr_settings(),
+        fixed_stop_loss_pct=CONFIG["stop_loss_pct"],
+        fixed_take_profit_pct=CONFIG["take_profit_pct"],
+        fixed_trailing_activation_pct=CONFIG["trailing_activation"],
+        fixed_trailing_distance_pct=CONFIG["trailing_distance"],
+    )
+
+
 def get_klines(symbol, interval="1h", limit=100):
     url = f"https://api.binance.com/api/v3/klines?symbol={symbol}USDT&interval={interval}&limit={limit}"
     req = urllib.request.Request(url)
     with urllib.request.urlopen(req, timeout=15) as resp:
         data = json.loads(resp.read())
     return [{"close": float(c[4]), "high": float(c[2]), "low": float(c[3]), "quote_vol": float(c[7])} for c in data]
+
 
 def calc_ema(closes, period):
     if len(closes) < period: return closes[-1] if closes else 0
@@ -76,6 +99,7 @@ def calc_ema(closes, period):
     for c in closes[1:]:
         result = (c - result) * mult + result
     return result
+
 
 def calc_macd(closes, fast=12, slow=26, signal=9):
     if len(closes) < slow + signal: return 0, 0, 0
@@ -91,11 +115,12 @@ def calc_macd(closes, fast=12, slow=26, signal=9):
     for m in macd_line: sg = (m-sg)*sg_mult + sg
     return macd_line[-1], sg, macd_line[-1] - sg
 
+
 def calc_sma(closes, period):
     if len(closes) < period: return closes[-1] if closes else 0
     return sum(closes[-period:]) / period
 
-# Paper trading state
+
 class PaperTrading:
     def __init__(self):
         self.initial = CONFIG["initial_balance"]
@@ -128,7 +153,7 @@ class PaperTrading:
             val += pos["qty"] * prices.get(coin, 0)
         return val
     
-    def buy(self, coin, price, usdt_amount):
+    def buy(self, coin, price, usdt_amount, risk_profile=None):
         if self.usdt < usdt_amount: usdt_amount = self.usdt
         if usdt_amount < 5: return False
         qty = usdt_amount / price
@@ -141,10 +166,12 @@ class PaperTrading:
             pos["qty"] += net_qty
             pos["avg_price"] = total_cost / pos["qty"]
             if price > pos["peak_price"]: pos["peak_price"] = price
+            if risk_profile: pos["risk_profile"] = risk_profile
         else:
-            self.positions[coin] = {"qty": net_qty, "avg_price": price, "peak_price": price}
+            self.positions[coin] = {"qty": net_qty, "avg_price": price, "peak_price": price, "risk_profile": risk_profile or {}}
         self.trade_log.append({"time": datetime.now(timezone.utc).isoformat(), "action": "BUY",
-            "coin": coin, "price": round(price, 4), "qty": round(net_qty, 6), "usdt": round(usdt_amount, 2), "fee": round(fee*price, 4)})
+            "coin": coin, "price": round(price, 4), "qty": round(net_qty, 6), "usdt": round(usdt_amount, 2),
+            "fee": round(fee*price, 4), "atr_pct": round((risk_profile or {}).get("atr_pct", 0.0), 4)})
         self.save()
         return True
     
@@ -175,36 +202,32 @@ class PaperTrading:
             pnl = (price - pos["avg_price"]) / pos["avg_price"] * 100
             if price > pos["peak_price"]: pos["peak_price"] = price
             
-            # Trend following exit: if trend breaks, sell
             try:
                 klines = get_klines(coin, "1h", 60)
                 closes = [k["close"] for k in klines]
                 sma20 = calc_sma(closes, 20)
-                if price < sma20:  # Crossed below 20MA = trend broken
+                if price < sma20:
                     self.sell(coin, price, "Trend broken (below 20MA)")
                     sold.append(coin)
                     continue
-            except: pass
+            except:
+                pass
             
-            # SL
-            if pnl <= CONFIG["stop_loss_pct"]:
-                self.sell(coin, price, f"SL {CONFIG['stop_loss_pct']}%")
+            profile = pos.get("risk_profile") or build_risk_profile(pos["avg_price"], [{"high": pos["avg_price"], "low": pos["avg_price"], "close": pos["avg_price"]}])
+            if pnl <= profile["stop_loss_pct"]:
+                self.sell(coin, price, f"SL {profile['stop_loss_pct']:.2f}%")
                 sold.append(coin); continue
-            
-            # TP
-            if pnl >= CONFIG["take_profit_pct"]:
-                self.sell(coin, price, f"TP +{CONFIG['take_profit_pct']}%")
+            if pnl >= profile["take_profit_pct"]:
+                self.sell(coin, price, f"TP +{profile['take_profit_pct']:.2f}%")
                 sold.append(coin); continue
-            
-            # Trailing
-            if pnl >= CONFIG["trailing_activation"]:
-                trail = pos["peak_price"] * (1 - CONFIG["trailing_distance"]/100)
+            if pnl >= profile["trailing_activation_pct"]:
+                trail = pos["peak_price"] * (1 - profile["trailing_distance_pct"]/100)
                 if price <= trail:
-                    self.sell(coin, price, f"Trail {CONFIG['trailing_distance']}%")
+                    self.sell(coin, price, f"Trail {profile['trailing_distance_pct']:.2f}%")
                     sold.append(coin)
         return sold
 
-# Main
+
 def run():
     print(f"📈 Bot #2 — Trend Following — {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     print("="*55)
@@ -234,6 +257,7 @@ def run():
             sma20 = calc_sma(closes, CONFIG["exit_ma"])
             macd_l, macd_s, macd_h = calc_macd(closes, CONFIG["macd_fast"], CONFIG["macd_slow"], CONFIG["macd_signal"])
             vol = k["quote_vol"]
+            risk_profile = build_risk_profile(price, klines)
             
             in_uptrend = price > sma50
             macd_bullish = macd_h > 0
@@ -243,17 +267,15 @@ def run():
             
             pct_from_50ma = ((price - sma50) / sma50) * 100 if sma50 > 0 else 0
             
-            print(f"  {coin:>5}: ${price:>8.2f} | 50MA=${sma50:>8.2f} ({pct_from_50ma:+.1f}%) | MACD={'🟢' if macd_bullish else '🔴'} | Vol=${vol:>10,.0f}")
+            print(f"  {coin:>5}: ${price:>8.2f} | 50MA=${sma50:>8.2f} ({pct_from_50ma:+.1f}%) | ATR={risk_profile['atr_pct']:.2f}% | MACD={'🟢' if macd_bullish else '🔴'} | Vol=${vol:>10,.0f}")
             
-            # Entry conditions
             if not holding and coin not in blocked_coins and in_uptrend and macd_bullish and above_20ma and has_volume:
                 score = pct_from_50ma * 2 + (20 if macd_bullish else 0)
-                signals.append({"coin": coin, "price": price, "score": round(score, 1)})
+                signals.append({"coin": coin, "price": price, "score": round(score, 1), "risk_profile": risk_profile})
                 print(f"    → 📈 TREND signal! Score={score:.0f}")
-        except Exception as e:
+        except:
             continue
     
-    # Check exits
     print(f"\n🔍 Checking positions...")
     sold = paper.check_exits(prices)
     if sold: print(f"  💰 Sold: {', '.join(sold)}")
@@ -262,13 +284,12 @@ def run():
         for coin, pos in paper.positions.items():
             p = prices.get(coin, 0)
             pnl = ((p - pos["avg_price"]) / pos["avg_price"]) * 100 if p > 0 else 0
-            print(f"  {coin:>5}: {pos['qty']:>6.4f} @ ${pos['avg_price']:>8.2f} → ${p:>8.2f} ({pnl:+.2f}%)")
+            rp = pos.get("risk_profile", {})
+            print(f"  {coin:>5}: {pos['qty']:>6.4f} @ ${pos['avg_price']:>8.2f} → ${p:>8.2f} ({pnl:+.2f}%) | SL {rp.get('stop_loss_pct', CONFIG['stop_loss_pct']):.2f}% | TP {rp.get('take_profit_pct', CONFIG['take_profit_pct']):.2f}%")
     
-    # Execute buys
     signals.sort(key=lambda x: -x["score"])
     max_new = min(len(signals), CONFIG["max_positions"] - len(paper.positions))
     remaining = get_available_budget(paper.total_value(prices), target_capital, target_capital)
-    executed_buys = []
     
     if manager_paused_buys:
         print(f"\n🛒 Manager risk guard — buys skipped.")
@@ -276,20 +297,24 @@ def run():
         print(f"\n🛒 Trend signals (top {max_new}):")
         for sig in signals[:max_new]:
             scaled_trade = scale_trade_size(CONFIG["buy_per_trade"], target_capital, paper.initial)
-            cost = min(scaled_trade, remaining / max_new)
+            sized_trade = normalize_position_size(
+                target_capital=target_capital,
+                base_notional=scaled_trade,
+                atr_pct_value=sig["risk_profile"]["atr_pct"],
+                settings=atr_settings(),
+            )
+            cost = min(sized_trade, remaining / max_new)
             if cost < 5: break
             gate = evaluate_entry_gate(sig["coin"], cost, settings=order_book_settings())
             if not gate.get("ok"):
                 print(f"  SKIP {sig['coin']}: order-book gate blocked entry ({compact_gate_reason(gate)})")
                 continue
-            print(f"  BUY {sig['coin']}: ${cost:.2f} @ ${sig['price']:.4f}")
-            if paper.buy(sig["coin"], sig["price"], cost):
-                executed_buys.append(sig["coin"])
+            print(f"  BUY {sig['coin']}: ${cost:.2f} @ ${sig['price']:.4f} | ATR={sig['risk_profile']['atr_pct']:.2f}% | SL={sig['risk_profile']['stop_loss_pct']:.2f}% | TP={sig['risk_profile']['take_profit_pct']:.2f}%")
+            if paper.buy(sig["coin"], sig["price"], cost, risk_profile=sig["risk_profile"]):
                 remaining -= cost
     else:
         print(f"\n📭 No trend signals. Market may not be in uptrend.")
     
-    # Summary
     total = paper.total_value(prices)
     pnl = total - paper.initial
     pnl_pct = (pnl / paper.initial) * 100

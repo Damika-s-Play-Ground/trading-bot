@@ -22,6 +22,7 @@ from trading_bot.core.bot_runtime import (
     new_buys_disabled,
     scale_trade_size,
 )
+from trading_bot.core.atr_risk import calculate_atr, normalize_position_size, resolve_atr_exit_profile
 from trading_bot.core.order_book_gates import compact_gate_reason, evaluate_entry_gate
 from trading_bot.core.state_store import load_json_path, save_json_path
 
@@ -235,7 +236,7 @@ class PaperTrading:
             val += pos["qty"] * prices.get(coin, 0)
         return val
 
-    def buy(self, coin, price, usdt_amount):
+    def buy(self, coin, price, usdt_amount, risk_profile=None):
         """Simulate a buy order"""
         if self.usdt < usdt_amount:
             usdt_amount = self.usdt
@@ -255,11 +256,16 @@ class PaperTrading:
             # Reset peak if we're adding at a lower price
             if price > pos["peak_price"]:
                 pos["peak_price"] = price
+            if risk_profile:
+                pos["risk_profile"] = risk_profile
+            for key in [k for k in list(pos.keys()) if k.startswith("tp_tier_idx_")]:
+                pos.pop(key, None)
         else:
             self.positions[coin] = {
                 "qty": net_qty,
                 "avg_price": price,
                 "peak_price": price,
+                "risk_profile": risk_profile or {},
             }
 
         self.trade_log.append({
@@ -270,6 +276,7 @@ class PaperTrading:
             "qty": round(net_qty, 8),
             "usdt": round(usdt_amount, 2),
             "fee": round(fee * price, 4),
+            "atr_pct": round((risk_profile or {}).get("atr_pct", 0.0), 4),
         })
         self.save()
         return True
@@ -309,7 +316,6 @@ class PaperTrading:
     def check_tp_sl(self, prices):
         """Check all positions for tiered take-profit and stop-loss"""
         sold = []
-        tp_tiers = tp_sl.get("take_profit_tiers", [{"pct": 8.0, "sell_fraction": 1.0}])
         
         for coin in list(self.positions.keys()):
             pos = self.positions[coin]
@@ -318,40 +324,40 @@ class PaperTrading:
                 continue
 
             pnl_pct = ((price - pos["avg_price"]) / pos["avg_price"]) * 100
+            risk_profile = pos.get("risk_profile") or build_risk_profile(pos["avg_price"], [[pos["avg_price"], pos["avg_price"], pos["avg_price"], pos["avg_price"], 0.0]])
+            tp_tiers = resolve_take_profit_tiers(risk_profile)
 
             # Update trailing peak
             if price > pos["peak_price"]:
                 pos["peak_price"] = price
 
             # Trailing stop check (on remaining position)
-            if tp_sl["trailing_stop"]:
-                if pnl_pct >= tp_sl["trailing_activation"]:
-                    trail_price = pos["peak_price"] * (1 - tp_sl["trailing_distance"] / 100)
-                    if price <= trail_price:
-                        self.sell(coin, price, f"Trailing Stop (-{tp_sl['trailing_distance']}% from peak)")
-                        sold.append(coin)
-                        continue
+            if tp_sl["trailing_stop"] and pnl_pct >= risk_profile["trailing_activation_pct"]:
+                trail_price = pos["peak_price"] * (1 - risk_profile["trailing_distance_pct"] / 100)
+                if price <= trail_price:
+                    self.sell(coin, price, f"Trailing Stop (-{risk_profile['trailing_distance_pct']:.2f}% from peak)")
+                    sold.append(coin)
+                    continue
 
             # Hard stop loss (always full exit)
-            if pnl_pct <= tp_sl["stop_loss_pct"]:
-                self.sell(coin, price, f"Stop Loss ({tp_sl['stop_loss_pct']}%)")
+            if pnl_pct <= risk_profile["stop_loss_pct"]:
+                self.sell(coin, price, f"Stop Loss ({risk_profile['stop_loss_pct']:.2f}%)")
                 sold.append(coin)
                 continue
 
             # Tiered take-profit: check each tier
-            for tier in tp_tiers:
+            for idx, tier in enumerate(tp_tiers):
                 tier_pct = tier["pct"]
                 tier_fraction = tier["sell_fraction"]
-                # Check if this tier has already been hit (tracked via pos)
-                tier_key = f"tp_tier_{tier_pct}"
+                tier_key = f"tp_tier_idx_{idx}"
                 if pos.get(tier_key, False):
-                    continue  # Already sold this tier
+                    continue
                 if pnl_pct >= tier_pct:
-                    self.sell(coin, price, f"TP Tier {tier_pct}% (sold {tier_fraction*100:.0f}%)", fraction=tier_fraction)
-                    pos[tier_key] = True  # Mark tier as done
+                    self.sell(coin, price, f"TP Tier {tier_pct:.2f}% (sold {tier_fraction*100:.0f}%)", fraction=tier_fraction)
+                    pos[tier_key] = True
                     if coin not in sold:
                         sold.append(coin)
-                    break  # Only hit one tier per check
+                    break
 
         return sold
 
@@ -391,6 +397,40 @@ def order_book_settings():
         "min_depth_multiple": filters.get("order_book_min_depth_multiple", 8.0),
         "fail_closed": filters.get("order_book_fail_closed", True),
     }
+
+
+def atr_settings():
+    return config.get("atr_risk", {})
+
+
+def build_risk_profile(price, klines):
+    settings = atr_settings()
+    atr_value = calculate_atr(klines, period=settings.get("period", 14))
+    return resolve_atr_exit_profile(
+        price=price,
+        atr_value=atr_value,
+        settings=settings,
+        fixed_stop_loss_pct=tp_sl.get("stop_loss_pct", -10.0),
+        fixed_take_profit_pct=max((tier.get("pct", 0.0) for tier in tp_sl.get("take_profit_tiers", [])), default=8.0),
+        fixed_trailing_activation_pct=tp_sl.get("trailing_activation", 8.0),
+        fixed_trailing_distance_pct=tp_sl.get("trailing_distance", 4.0),
+    )
+
+
+def resolve_take_profit_tiers(risk_profile):
+    base_tiers = tp_sl.get("take_profit_tiers", [{"pct": 8.0, "sell_fraction": 1.0}])
+    tier_multipliers = atr_settings().get("take_profit_tier_atr_multipliers", [2.2, 4.0])
+    atr_pct = float((risk_profile or {}).get("atr_pct", 0.0))
+    max_take_profit_pct = float((risk_profile or {}).get("take_profit_pct", atr_settings().get("max_take_profit_pct", 18.0)))
+    resolved = []
+    for idx, tier in enumerate(base_tiers):
+        multiplier = tier_multipliers[idx] if idx < len(tier_multipliers) else tier_multipliers[-1]
+        pct_floor = atr_pct * multiplier if atr_pct > 0 else 0.0
+        resolved.append({
+            "pct": round(min(max(float(tier.get("pct", 0.0)), pct_floor), max_take_profit_pct), 4),
+            "sell_fraction": float(tier.get("sell_fraction", 1.0)),
+        })
+    return resolved
 
 
 def run():
@@ -456,6 +496,7 @@ def run():
             bb_mid, bb_up, bb_low = calc_bollinger(closes)
             ticker = client.get_24h_ticker(coin)
             volume = float(ticker.get("quoteVolume", 0))
+            risk_profile = build_risk_profile(price, klines)
         except Exception as e:
             continue
 
@@ -476,7 +517,7 @@ def run():
         bb_icon = "🟢" if near_bb_lower else ("🟡" if price < bb_mid else "🔴")
         macd_icon = "🟢" if macd_bullish else "🔴"
         wt = f"×{coin_weight:.1f}" if coin_weight != 1.0 else ""
-        print(f"  {coin:>5}: RSI={rsi14:5.1f} {rsi_color} | BB={bb_icon} | MACD={macd_icon} | Wt{wt:>5} | Vol=${volume:>12,.0f}")
+        print(f"  {coin:>5}: RSI={rsi14:5.1f} {rsi_color} | BB={bb_icon} | MACD={macd_icon} | ATR={risk_profile['atr_pct']:.2f}% | Wt{wt:>5} | Vol=${volume:>12,.0f}")
 
         # Signal scoring: combine RSI + Bollinger + MACD + Volume
         buy_signal = oversold and has_volume and not holding and coin not in blocked_coins
@@ -498,9 +539,10 @@ def run():
                 "price": price,
                 "rsi": rsi14,
                 "score": round(score, 1),
+                "risk_profile": risk_profile,
             })
 
-            print(f"    → BUY signal! Score={score:.0f} | RSI={rsi14:.1f} | BB={'near lower' if near_bb_lower else 'mid' } | MACD={'bullish' if macd_bullish else 'bearly'}")
+            print(f"    → BUY signal! Score={score:.0f} | RSI={rsi14:.1f} | ATR={risk_profile['atr_pct']:.2f}% | BB={'near lower' if near_bb_lower else 'mid' } | MACD={'bullish' if macd_bullish else 'bearly'}")
 
     # 3. Check TP/SL for existing positions
     print(f"\n🔍 Checking positions...")
@@ -509,7 +551,8 @@ def run():
             price = prices.get(coin, 0)
             if price > 0:
                 pnl = ((price - pos["avg_price"]) / pos["avg_price"]) * 100
-                print(f"  {coin:>5}: {pos['qty']:>8.4f} @ avg ${pos['avg_price']:>8.2f} → ${price:>8.2f} ({pnl:+.2f}%)")
+                rp = pos.get("risk_profile", {})
+                print(f"  {coin:>5}: {pos['qty']:>8.4f} @ avg ${pos['avg_price']:>8.2f} → ${price:>8.2f} ({pnl:+.2f}%) | SL {rp.get('stop_loss_pct', tp_sl['stop_loss_pct']):.2f}% | Trail {rp.get('trailing_distance_pct', tp_sl['trailing_distance']):.2f}%")
     else:
         print(f"  No open positions.")
 
@@ -536,15 +579,21 @@ def run():
             weight = get_coin_weight(coin)
             scaled_trade = scale_trade_size(dca["buy_per_trade"], target_capital, paper.initial_balance)
             boosted_cost = scaled_trade * buy_boost * weight
-            cost = min(boosted_cost, remaining_budget / max_new)
+            sized_cost = normalize_position_size(
+                target_capital=target_capital,
+                base_notional=boosted_cost,
+                atr_pct_value=sig["risk_profile"]["atr_pct"],
+                settings=atr_settings(),
+            )
+            cost = min(sized_cost, remaining_budget / max_new)
             if cost < 3:
                 break
             gate = evaluate_entry_gate(coin, cost, settings=order_book_settings())
             if not gate.get("ok"):
                 print(f"  SKIP {coin}: order-book gate blocked entry ({compact_gate_reason(gate)})")
                 continue
-            print(f"  BUY {coin}: ${cost:.2f} @ ${sig['price']:.4f} (RSI={sig['rsi']:.1f}, wt={weight:.1f}x)")
-            if paper.buy(coin, sig["price"], cost):
+            print(f"  BUY {coin}: ${cost:.2f} @ ${sig['price']:.4f} (RSI={sig['rsi']:.1f}, ATR={sig['risk_profile']['atr_pct']:.2f}%, SL={sig['risk_profile']['stop_loss_pct']:.2f}%, wt={weight:.1f}x)")
+            if paper.buy(coin, sig["price"], cost, risk_profile=sig["risk_profile"]):
                 executed_buys.append(coin)
                 remaining_budget -= cost
     else:
