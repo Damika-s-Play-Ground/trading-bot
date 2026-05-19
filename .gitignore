@@ -28,6 +28,7 @@ htmlcov/
 /data/candidate_scores.json
 /data/allocation_optimizer_snapshot.json
 /data/live_promotion_report.json
+/data/research_scraper_state.json
 /data/runtime_state.json
 /data/dashboard.sqlite-wal
 /data/dashboard.sqlite-shm

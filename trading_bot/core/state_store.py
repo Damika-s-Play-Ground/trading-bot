@@ -21,6 +21,7 @@ LOCAL_DATA_DIR = REPO_ROOT / "data"
 LOCAL_FALLBACK_PATH = LOCAL_DATA_DIR / "runtime_state.json"
 DB_RETRY_COOLDOWN_SECONDS = 60.0
 _DB_STATUS = {"failed_at": 0.0}
+MISSING = object()
 
 APP_STATE_TABLE_SQL = """
 CREATE TABLE IF NOT EXISTS app_state (
@@ -96,6 +97,22 @@ def _fallback_save(payload: dict[str, Any]) -> None:
     LOCAL_FALLBACK_PATH.write_text(json.dumps(payload, indent=2))
 
 
+def _disk_load_json(path: str | Path, default: Any) -> Any:
+    source = Path(path)
+    if not source.exists():
+        return default
+    try:
+        return json.loads(source.read_text())
+    except Exception:
+        return default
+
+
+def _disk_save_json(path: str | Path, payload: Any) -> None:
+    target = Path(path)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(json.dumps(payload, indent=2, ensure_ascii=False))
+
+
 def _iso_now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
@@ -109,17 +126,25 @@ def key_for_path(path: str | Path) -> str:
 
 
 def load_state(key: str, default: Any) -> Any:
+    found, payload = _load_state_hit(key)
+    return payload if found else default
+
+
+def _load_state_hit(key: str) -> tuple[bool, Any]:
     if DATABASE_URL and psycopg is not None:
         try:
             with connect() as conn, conn.cursor() as cur:
                 cur.execute("SELECT payload_json FROM app_state WHERE state_key = %s", (key,))
                 row = cur.fetchone()
                 if row:
-                    return json.loads(row["payload_json"])
+                    return True, json.loads(row["payload_json"])
         except Exception:
             pass
     data = _fallback_load()
-    return data.get("state", {}).get(key, default)
+    state = data.get("state", {})
+    if key in state:
+        return True, state[key]
+    return False, MISSING
 
 
 def save_state(key: str, payload: Any) -> None:
@@ -146,17 +171,25 @@ def save_state(key: str, payload: Any) -> None:
 
 
 def load_config(key: str, default: Any) -> Any:
+    found, payload = _load_config_hit(key)
+    return payload if found else default
+
+
+def _load_config_hit(key: str) -> tuple[bool, Any]:
     if DATABASE_URL and psycopg is not None:
         try:
             with connect() as conn, conn.cursor() as cur:
                 cur.execute("SELECT payload_json FROM app_configs WHERE config_key = %s", (key,))
                 row = cur.fetchone()
                 if row:
-                    return json.loads(row["payload_json"])
+                    return True, json.loads(row["payload_json"])
         except Exception:
             pass
     data = _fallback_load()
-    return data.get("configs", {}).get(key, default)
+    configs = data.get("configs", {})
+    if key in configs:
+        return True, configs[key]
+    return False, MISSING
 
 
 def save_config(key: str, payload: Any) -> None:
@@ -183,17 +216,25 @@ def save_config(key: str, payload: Any) -> None:
 
 
 def load_blob(key: str, default: str = "") -> str:
+    found, payload = _load_blob_hit(key)
+    return str(payload) if found else str(default)
+
+
+def _load_blob_hit(key: str) -> tuple[bool, Any]:
     if DATABASE_URL and psycopg is not None:
         try:
             with connect() as conn, conn.cursor() as cur:
                 cur.execute("SELECT payload_text FROM app_blobs WHERE blob_key = %s", (key,))
                 row = cur.fetchone()
                 if row:
-                    return str(row["payload_text"])
+                    return True, str(row["payload_text"])
         except Exception:
             pass
     data = _fallback_load()
-    return str(data.get("blobs", {}).get(key, default))
+    blobs = data.get("blobs", {})
+    if key in blobs:
+        return True, blobs[key]
+    return False, MISSING
 
 
 def save_blob(key: str, payload: str) -> None:
@@ -222,8 +263,12 @@ def load_json_path(path: str | Path, default: Any) -> Any:
     name = _basename_key(path)
     key = key_for_path(path)
     if name in {"config.json", "config_trend.json"}:
-        return load_config(key, default)
-    return load_state(key, default)
+        found, payload = _load_config_hit(key)
+    else:
+        found, payload = _load_state_hit(key)
+    if not found:
+        return _disk_load_json(path, default)
+    return payload
 
 
 def save_json_path(path: str | Path, payload: Any) -> None:
@@ -231,8 +276,9 @@ def save_json_path(path: str | Path, payload: Any) -> None:
     key = key_for_path(path)
     if name in {"config.json", "config_trend.json"}:
         save_config(key, payload)
-        return
-    save_state(key, payload)
+    else:
+        save_state(key, payload)
+    _disk_save_json(path, payload)
 
 
 def import_json_file(path: str | Path, *, is_config: bool = False, state_key: str | None = None) -> bool:

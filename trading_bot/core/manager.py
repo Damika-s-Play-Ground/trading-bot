@@ -672,13 +672,16 @@ def run_child(bot_key, allocation, blocked_coins, disable_new_buys, pause_reason
     if pause_reason:
         env["BOT_PAUSE_REASON"] = pause_reason
 
-    result = subprocess.run(
-        [str(BASE_DIR / "venv" / "bin" / "python3.13"), str(script)],
-        capture_output=True,
-        text=True,
-        timeout=90,
-        env=env,
-    )
+    try:
+        result = subprocess.run(
+            [str(BASE_DIR / "venv" / "bin" / "python3.13"), str(script)],
+            capture_output=True,
+            text=True,
+            timeout=180,
+            env=env,
+        )
+    except subprocess.TimeoutExpired:
+        return 124, f"Timed out after 180s: {script.name}"
     lines = result.stdout.splitlines()
     summary = [
         line for line in lines
