@@ -443,12 +443,21 @@ def sync_todo_items(path: Path = SUMMARY_FILE) -> int:
 
 def sync_all() -> dict[str, int]:
     ensure_schema()
-    return {
+    result = {
         "performance_runs": sync_performance_runs(),
         "cron_runs": sync_cron_runs(),
         "research_items": sync_research_entries(),
         "todo_items": sync_todo_items(),
     }
+    try:
+        from trading_bot.dashboards.glossary import glossary, md_to_html
+        from trading_bot.dashboards.page_store import sync_page_data
+        from trading_bot.dashboards.spot_dashboard import CRON_JOBS
+
+        result.update(sync_page_data(glossary_terms=glossary, content_html_builder=md_to_html, cron_jobs=CRON_JOBS))
+    except Exception:
+        pass
+    return result
 
 
 def sync_all_if_needed(force: bool = False, min_interval: float = 5.0) -> dict[str, int]:

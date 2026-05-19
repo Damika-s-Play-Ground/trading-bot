@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import time
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
@@ -13,11 +14,13 @@ except Exception:  # pragma: no cover - dependency added in requirements
     psycopg = None
     dict_row = None
 
-from trading_bot.config.settings import DATABASE_URL, REPO_ROOT
+from trading_bot.config.settings import DATABASE_CONNECT_TIMEOUT, DATABASE_URL, REPO_ROOT
 
 
 LOCAL_DATA_DIR = REPO_ROOT / "data"
 LOCAL_FALLBACK_PATH = LOCAL_DATA_DIR / "runtime_state.json"
+DB_RETRY_COOLDOWN_SECONDS = 60.0
+_DB_STATUS = {"failed_at": 0.0}
 
 APP_STATE_TABLE_SQL = """
 CREATE TABLE IF NOT EXISTS app_state (
@@ -64,11 +67,19 @@ def connect() -> Iterator[Any]:
         raise RuntimeError("DATABASE_URL is not configured")
     if psycopg is None:
         raise RuntimeError("psycopg is not installed")
-    with psycopg.connect(DATABASE_URL, row_factory=dict_row) as conn:
-        with conn.cursor() as cur:
-            cur.execute(APP_STATE_TABLE_SQL)
-        conn.commit()
-        yield conn
+    failed_at = float(_DB_STATUS.get("failed_at") or 0.0)
+    if failed_at and (time.time() - failed_at) < DB_RETRY_COOLDOWN_SECONDS:
+        raise RuntimeError("DATABASE_URL temporarily unavailable")
+    try:
+        with psycopg.connect(DATABASE_URL, row_factory=dict_row, connect_timeout=DATABASE_CONNECT_TIMEOUT) as conn:
+            with conn.cursor() as cur:
+                cur.execute(APP_STATE_TABLE_SQL)
+            conn.commit()
+            _DB_STATUS["failed_at"] = 0.0
+            yield conn
+    except Exception:
+        _DB_STATUS["failed_at"] = time.time()
+        raise
 
 
 def _fallback_load() -> dict[str, Any]:
@@ -114,18 +125,21 @@ def load_state(key: str, default: Any) -> Any:
 def save_state(key: str, payload: Any) -> None:
     text = json.dumps(payload, ensure_ascii=False)
     if DATABASE_URL and psycopg is not None:
-        with connect() as conn, conn.cursor() as cur:
-            cur.execute(
-                """
-                INSERT INTO app_state (state_key, payload_json, updated_at)
-                VALUES (%s, %s, NOW())
-                ON CONFLICT (state_key) DO UPDATE SET
-                    payload_json = EXCLUDED.payload_json,
-                    updated_at = NOW()
-                """,
-                (key, text),
-            )
-        return
+        try:
+            with connect() as conn, conn.cursor() as cur:
+                cur.execute(
+                    """
+                    INSERT INTO app_state (state_key, payload_json, updated_at)
+                    VALUES (%s, %s, NOW())
+                    ON CONFLICT (state_key) DO UPDATE SET
+                        payload_json = EXCLUDED.payload_json,
+                        updated_at = NOW()
+                    """,
+                    (key, text),
+                )
+            return
+        except Exception:
+            pass
     data = _fallback_load()
     data.setdefault("state", {})[key] = payload
     _fallback_save(data)
@@ -148,18 +162,21 @@ def load_config(key: str, default: Any) -> Any:
 def save_config(key: str, payload: Any) -> None:
     text = json.dumps(payload, ensure_ascii=False)
     if DATABASE_URL and psycopg is not None:
-        with connect() as conn, conn.cursor() as cur:
-            cur.execute(
-                """
-                INSERT INTO app_configs (config_key, payload_json, updated_at)
-                VALUES (%s, %s, NOW())
-                ON CONFLICT (config_key) DO UPDATE SET
-                    payload_json = EXCLUDED.payload_json,
-                    updated_at = NOW()
-                """,
-                (key, text),
-            )
-        return
+        try:
+            with connect() as conn, conn.cursor() as cur:
+                cur.execute(
+                    """
+                    INSERT INTO app_configs (config_key, payload_json, updated_at)
+                    VALUES (%s, %s, NOW())
+                    ON CONFLICT (config_key) DO UPDATE SET
+                        payload_json = EXCLUDED.payload_json,
+                        updated_at = NOW()
+                    """,
+                    (key, text),
+                )
+            return
+        except Exception:
+            pass
     data = _fallback_load()
     data.setdefault("configs", {})[key] = payload
     _fallback_save(data)
@@ -181,18 +198,21 @@ def load_blob(key: str, default: str = "") -> str:
 
 def save_blob(key: str, payload: str) -> None:
     if DATABASE_URL and psycopg is not None:
-        with connect() as conn, conn.cursor() as cur:
-            cur.execute(
-                """
-                INSERT INTO app_blobs (blob_key, payload_text, updated_at)
-                VALUES (%s, %s, NOW())
-                ON CONFLICT (blob_key) DO UPDATE SET
-                    payload_text = EXCLUDED.payload_text,
-                    updated_at = NOW()
-                """,
-                (key, payload),
-            )
-        return
+        try:
+            with connect() as conn, conn.cursor() as cur:
+                cur.execute(
+                    """
+                    INSERT INTO app_blobs (blob_key, payload_text, updated_at)
+                    VALUES (%s, %s, NOW())
+                    ON CONFLICT (blob_key) DO UPDATE SET
+                        payload_text = EXCLUDED.payload_text,
+                        updated_at = NOW()
+                    """,
+                    (key, payload),
+                )
+            return
+        except Exception:
+            pass
     data = _fallback_load()
     data.setdefault("blobs", {})[key] = payload
     _fallback_save(data)

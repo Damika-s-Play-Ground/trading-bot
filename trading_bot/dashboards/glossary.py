@@ -5,6 +5,8 @@ Glossary Page — searchable, bookmarkable technical terms
 import json, re
 from pathlib import Path
 
+from trading_bot.dashboards.page_store import load_glossary_terms
+
 REPO_ROOT = Path(__file__).resolve().parents[2]
 OUTPUT = REPO_ROOT / "glossary.html"
 
@@ -958,7 +960,7 @@ Missed cadence = 18 minutes late
 """),
 
     ("Dashboard Store", "performance", """
-**Dashboard Store** = The SQLite-backed data layer that keeps dashboard history, cron logs, research items, and synced TODO state in one place.
+**Dashboard Store** = The Supabase Postgres-backed data layer that keeps dashboard history, cron metadata, research items, glossary content, and synced TODO state in one place.
 
 ```
 performance_runs
@@ -974,12 +976,15 @@ todo_state_overrides
 """),
 ]
 
-# Build HTML
-term_cards = ""
-for i, (name, category, content) in enumerate(glossary):
-    cat_icon = {"indicators":"📈","risk":"🛡️","market":"📊","portfolio":"📦","trading":"💱","basics":"📖","performance":"🎯","strategy":"🧠","defi":"🏦"}.get(category, "📌")
-    content_html = md_to_html(content)
-    term_cards += f"""
+def build_glossary_page() -> tuple[str, int]:
+    terms = load_glossary_terms(glossary, content_html_builder=md_to_html)
+    term_cards = ""
+    for i, item in enumerate(terms):
+        name = str(item.get("title") or "")
+        category = str(item.get("category") or "basics")
+        content_html = str(item.get("content_html") or md_to_html(str(item.get("content_markdown") or "")))
+        cat_icon = {"indicators":"📈","risk":"🛡️","market":"📊","portfolio":"📦","trading":"💱","basics":"📖","performance":"🎯","strategy":"🧠","defi":"🏦"}.get(category, "📌")
+        term_cards += f"""
     <div class="term-card" data-id="t{i}" data-category="{category}" data-name="{name.lower()}">
         <div class="term-header" onclick="toggleTerm('t{i}')">
             <span class="term-icon">{cat_icon}</span>
@@ -993,7 +998,7 @@ for i, (name, category, content) in enumerate(glossary):
         </div>
     </div>"""
 
-html = f"""<!DOCTYPE html>
+    html = f"""<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -1162,8 +1167,8 @@ html = f"""<!DOCTYPE html>
     </div>
     
     <div class="glossary-stats">
-        <div class="gstat"><div class="label">Terms</div><div class="value">{len(glossary)}</div></div>
-        <div class="gstat"><div class="label">Visible</div><div class="value" id="visible-count">{len(glossary)}</div></div>
+        <div class="gstat"><div class="label">Terms</div><div class="value">{len(terms)}</div></div>
+        <div class="gstat"><div class="label">Visible</div><div class="value" id="visible-count">{len(terms)}</div></div>
         <div class="gstat"><div class="label">Bookmarked</div><div class="value" id="bookmark-count">0</div></div>
     </div>
     
@@ -1190,8 +1195,14 @@ html = f"""<!DOCTYPE html>
     </div>
 </body>
 </html>"""
+    OUTPUT.write_text(html, encoding="utf-8")
+    return str(OUTPUT), len(terms)
 
-with open(OUTPUT, "w") as f:
-    f.write(html)
 
-print(f"✅ Glossary generated: {OUTPUT} ({len(glossary)} terms)")
+def main() -> None:
+    output, term_count = build_glossary_page()
+    print(f"✅ Glossary generated: {output} ({term_count} terms)")
+
+
+if __name__ == "__main__":
+    main()

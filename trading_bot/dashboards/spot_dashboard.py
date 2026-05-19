@@ -15,6 +15,7 @@ from pathlib import Path
 
 from trading_bot.core.state_store import load_json_path
 from trading_bot.dashboards.data_store import load_performance_runs, sync_all
+from trading_bot.dashboards.page_store import load_cron_runs as load_cron_runs_from_db
 from trading_bot.dashboards.shared_ui import build_bar_chart, build_donut_chart, build_line_chart_svg
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -207,9 +208,7 @@ def load_spot_data(prices, manager_state):
 
 
 def load_cron_runs():
-    data = load_json(CRON_LOG_FILE, {"runs": []})
-    runs = data.get("runs", []) if isinstance(data, dict) else []
-    return runs if isinstance(runs, list) else []
+    return load_cron_runs_from_db(job_meta=CRON_JOBS)
 
 
 def cron_status(run, max_age_s):

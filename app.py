@@ -12,16 +12,13 @@ from flask import Flask, abort, jsonify, redirect, render_template_string, reque
 from trading_bot.config.settings import APP_HOST, APP_PORT, BUILD_ON_START
 from trading_bot.dashboards.dashboard_backend import dashboard_payload
 from trading_bot.dashboards.data_store import (
-    create_todo_item,
     load_research_items,
     load_research_state_overrides,
-    load_todo_items,
     load_todo_state_overrides,
     save_research_state,
-    save_todo_state,
     sync_all_if_needed,
-    todo_stats,
 )
+from trading_bot.dashboards.page_store import create_todo_item, load_todo_items, save_todo_state, todo_stats
 from trading_bot.dashboards.spot_dashboard import MANAGER_FILE, fetch_prices, load_cron_runs, load_json, load_spot_data
 
 REPO_ROOT = Path(__file__).resolve().parent

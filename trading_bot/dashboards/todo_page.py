@@ -7,7 +7,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from trading_bot.dashboards.data_store import load_todo_items, sync_all_if_needed, todo_stats
+from trading_bot.dashboards.data_store import sync_all_if_needed
+from trading_bot.dashboards.page_store import load_todo_items, todo_stats
 from trading_bot.dashboards.spot_dashboard import build_shared_style, nav
 
 REPO_ROOT = Path(__file__).resolve().parents[2]

@@ -11,7 +11,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from trading_bot.dashboards.data_store import load_performance_runs, load_todo_items, sync_all_if_needed, todo_stats
+from trading_bot.dashboards.data_store import load_performance_runs, sync_all_if_needed
+from trading_bot.dashboards.page_store import load_cron_jobs, load_cron_runs, load_todo_items, todo_stats
 from trading_bot.dashboards.spot_dashboard import (
     BASE_DIR,
     BOT_FILES,
@@ -25,7 +26,6 @@ from trading_bot.dashboards.spot_dashboard import (
     fmt_money,
     fmt_pct,
     iter_position_rows,
-    load_cron_runs,
     load_json,
     parse_time,
 )
@@ -214,7 +214,9 @@ def _cron_summary(runs: list[dict[str, Any]]) -> list[dict[str, Any]]:
     for run in runs:
         grouped[str(run.get("job", "unknown"))].append(run)
     output = []
-    for job_key, meta in CRON_JOBS.items():
+    job_rows = load_cron_jobs(CRON_JOBS)
+    job_meta = {str(row.get("job_key") or "unknown"): row for row in job_rows} or CRON_JOBS
+    for job_key, meta in job_meta.items():
         job_runs = sorted(grouped.get(job_key, []), key=lambda item: parse_time(item.get("timestamp")) or datetime.min.replace(tzinfo=timezone.utc), reverse=True)
         latest = job_runs[0] if job_runs else None
         latest_dt = parse_time(latest.get("timestamp")) if latest else None
