@@ -1,0 +1,148 @@
+{
+  "generated_at": "2026-06-12T07:07:37.134564+00:00",
+  "status": "eligible_for_side_by_side_dry_run",
+  "rule": "Do not promote any strategy or parameter change from raw backtest PnL alone.",
+  "policy": {
+    "train_days": 15,
+    "test_days": 7,
+    "step_days": 7,
+    "min_train_trades": 1,
+    "min_test_trades": 1,
+    "min_total_test_trades_for_promotion": 2,
+    "min_dry_run_days": 21,
+    "min_dry_run_trades": 100,
+    "fee_bps_per_side": 10.0,
+    "slippage_bps_per_side": 5.0
+  },
+  "windows": [
+    {
+      "window": {
+        "index": 1,
+        "train_start": "2026-05-10",
+        "train_end": "2026-05-25",
+        "test_start": "2026-05-25",
+        "test_end": "2026-06-01"
+      },
+      "train": {
+        "metrics": {
+          "net_pnl_after_fees_slippage": -0.31,
+          "net_return_pct": -0.155,
+          "max_drawdown_abs": 0.31,
+          "max_drawdown_pct": 0.155,
+          "profit_factor": 0.0,
+          "win_rate": 0.0,
+          "sharpe_per_trade": 0.0,
+          "sortino_per_trade": 0.0,
+          "benchmark_return_pct": 0.0,
+          "benchmark_relative_return_pct": -0.155,
+          "trade_count": 1
+        },
+        "minimum_trade_count": 1,
+        "passed_minimum_trades": true
+      },
+      "test": {
+        "metrics": {
+          "net_pnl_after_fees_slippage": 0.23,
+          "net_return_pct": 0.115,
+          "max_drawdown_abs": 0.0,
+          "max_drawdown_pct": 0.0,
+          "profit_factor": "inf",
+          "win_rate": 100.0,
+          "sharpe_per_trade": 8.038627,
+          "sortino_per_trade": 0.0,
+          "benchmark_return_pct": 0.0,
+          "benchmark_relative_return_pct": 0.115,
+          "trade_count": 2
+        },
+        "minimum_trade_count": 1,
+        "passed_minimum_trades": true
+      }
+    },
+    {
+      "window": {
+        "index": 2,
+        "train_start": "2026-05-17",
+        "train_end": "2026-06-01",
+        "test_start": "2026-06-01",
+        "test_end": "2026-06-08"
+      },
+      "train": {
+        "metrics": {
+          "net_pnl_after_fees_slippage": -0.08,
+          "net_return_pct": -0.04,
+          "max_drawdown_abs": 0.31,
+          "max_drawdown_pct": 0.155,
+          "profit_factor": 0.741935,
+          "win_rate": 66.666667,
+          "sharpe_per_trade": 0.105078,
+          "sortino_per_trade": 0.170894,
+          "benchmark_return_pct": 0.0,
+          "benchmark_relative_return_pct": -0.04,
+          "trade_count": 3
+        },
+        "minimum_trade_count": 1,
+        "passed_minimum_trades": true
+      },
+      "test": {
+        "metrics": {
+          "net_pnl_after_fees_slippage": -2.04,
+          "net_return_pct": -1.02,
+          "max_drawdown_abs": 2.04,
+          "max_drawdown_pct": 1.02,
+          "profit_factor": 0.0,
+          "win_rate": 0.0,
+          "sharpe_per_trade": -21.687851,
+          "sortino_per_trade": -21.687851,
+          "benchmark_return_pct": 0.0,
+          "benchmark_relative_return_pct": -1.02,
+          "trade_count": 5
+        },
+        "minimum_trade_count": 1,
+        "passed_minimum_trades": true
+      }
+    }
+  ],
+  "promotion_gate_summary": {
+    "status": "eligible_for_side_by_side_dry_run",
+    "train_windows_passed_min_trades": true,
+    "test_windows_passed_min_trades": true,
+    "aggregate_test_trades": 7,
+    "minimum_aggregate_test_trades": 2,
+    "aggregate_test_trades_passed": true,
+    "next_gate": "Side-by-side dry-run for 21 days or 100 candidate trades"
+  },
+  "promotion_checklist": [
+    {
+      "item": "walk_forward_test_windows_passed",
+      "requirement": "Each test window has >= 1 trades and acceptable drawdown / profit-factor evidence."
+    },
+    {
+      "item": "aggregate_test_sample_size",
+      "requirement": "All test windows together have >= 2 closed trades."
+    },
+    {
+      "item": "side_by_side_dry_run",
+      "requirement": "Run candidate beside unchanged control for 21 days or >= 100 candidate trades, whichever gives enough evidence first."
+    },
+    {
+      "item": "control_not_changed_mid_test",
+      "requirement": "Control strategy, pairlist, stake, wallet, exchange, and timeframe stay fixed during the comparison."
+    },
+    {
+      "item": "candidate_beats_control_after_costs",
+      "requirement": "Candidate beats control on net PnL after fees/slippage and does not worsen max drawdown, profit factor, or downside metric materially."
+    },
+    {
+      "item": "operator_review_required",
+      "requirement": "Human review signs off before any VPS/live/testnet promotion; raw backtest PnL alone is never enough."
+    }
+  ],
+  "isolation_requirements": {
+    "database": "One SQLite DB per variant; never share tradesv3.sqlite between control and candidate.",
+    "logs": "One logfile per variant with variant name and timestamp in the path.",
+    "api_port": "One FreqUI/API port per variant, bound to localhost unless intentionally exposed.",
+    "config": "One config JSON per variant; pin strategy class, pairlist, stake, wallet, timeframe, and dry_run_wallet.",
+    "dashboard_identity": "Dashboard title, bot_name, Telegram identity, and scoreboard label must clearly show control vs candidate.",
+    "data_directory": "One user_data directory or isolated DB/log subpaths per variant to prevent artifact collisions."
+  }
+}
