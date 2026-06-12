@@ -25,7 +25,8 @@ Sell/exit/state-save actions intentionally bypass buy-only locks. This keeps ris
 | `pair_cooldown_active` | Pair is inside its configured cooldown window. |
 | `max_single_coin_exposure` | Buying would breach the projected single-coin portfolio exposure cap. |
 | `empty_order_book` | Book has no usable bid or ask levels. |
-| `stale_order_book` | Book snapshot is older than `max_order_book_age_seconds`, or has no timestamp while age checking is enabled. |
+| `stale_order_book` | Book snapshot or trusted fetch timestamp is older than `max_order_book_age_seconds`. |
+| `unverifiable_order_book` | Book has no exchange timestamp and no explicit trusted fetch timestamp, so age cannot be verified. |
 | `wide_spread` | Best bid/ask spread exceeds `max_spread_pct`. |
 | `high_slippage` | Estimated market-buy slippage exceeds `max_slippage_pct`. |
 | `thin_depth` | Near-touch ask depth is below `min_near_touch_depth_multiple × order size`. |

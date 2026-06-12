@@ -5,7 +5,7 @@ from trading_bot.core.execution_risk_gate import (
     ExecutionRiskConfig, ExecutionRiskState, REASON_BUY_DISABLED, REASON_COOLDOWN,
     REASON_DAILY_LOSS_LOCK, REASON_EMPTY_BOOK, REASON_HIGH_SLIPPAGE, REASON_MAX_EXPOSURE,
     REASON_PORTFOLIO_DRAWDOWN_LOCK, REASON_STALE_BOOK, REASON_THIN_DEPTH,
-    REASON_WIDE_SPREAD, evaluate_execution_gate,
+    REASON_UNVERIFIABLE_BOOK, REASON_WIDE_SPREAD, evaluate_execution_gate,
 )
 
 
@@ -36,8 +36,37 @@ class ExecutionRiskGateTests(unittest.TestCase):
         timestampless = evaluate_execution_gate(action="buy", symbol="TEST", trade_notional_usdt=10, order_book=timestampless_book, config=self.config, now=self.now)
         empty = evaluate_execution_gate(action="buy", symbol="TEST", trade_notional_usdt=10, order_book={"timestamp": self.now.timestamp(), "bids": [], "asks": []}, config=self.config, now=self.now)
         self.assertEqual(stale.reason, REASON_STALE_BOOK)
-        self.assertEqual(timestampless.reason, REASON_STALE_BOOK)
+        self.assertEqual(timestampless.reason, REASON_UNVERIFIABLE_BOOK)
         self.assertEqual(empty.reason, REASON_EMPTY_BOOK)
+
+    def test_timestampless_book_can_use_trusted_fetch_timestamp(self):
+        timestampless_book = {"bids": [["100", "10"]], "asks": [["100.01", "10"]]}
+        decision = evaluate_execution_gate(
+            action="buy",
+            symbol="TEST",
+            trade_notional_usdt=10,
+            order_book=timestampless_book,
+            config=self.config,
+            now=self.now,
+            trusted_fetch_timestamp=self.now,
+        )
+        self.assertTrue(decision.allowed)
+        self.assertEqual(decision.reasons, ())
+        self.assertEqual(decision.metrics["order_book_timestamp_source"], "trusted_fetch_timestamp")
+
+    def test_timestampless_book_with_stale_trusted_fetch_timestamp_denies_buy(self):
+        timestampless_book = {"bids": [["100", "10"]], "asks": [["100.01", "10"]]}
+        decision = evaluate_execution_gate(
+            action="buy",
+            symbol="TEST",
+            trade_notional_usdt=10,
+            order_book=timestampless_book,
+            config=self.config,
+            now=self.now,
+            trusted_fetch_timestamp=self.now - timedelta(seconds=30),
+        )
+        self.assertFalse(decision.allowed)
+        self.assertEqual(decision.reason, REASON_STALE_BOOK)
 
     def test_multi_level_slippage_denies_buy(self):
         book = {"timestamp": self.now.timestamp(), "bids": [["99.99", "50"]], "asks": [["100", "0.02"], ["102", "0.20"], ["103", "2"]]}

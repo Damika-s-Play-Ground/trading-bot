@@ -17,6 +17,7 @@ REASON_COOLDOWN = "pair_cooldown_active"
 REASON_MAX_EXPOSURE = "max_single_coin_exposure"
 REASON_EMPTY_BOOK = "empty_order_book"
 REASON_STALE_BOOK = "stale_order_book"
+REASON_UNVERIFIABLE_BOOK = "unverifiable_order_book"
 REASON_WIDE_SPREAD = "wide_spread"
 REASON_HIGH_SLIPPAGE = "high_slippage"
 REASON_THIN_DEPTH = "thin_depth"
@@ -29,7 +30,8 @@ SKIP_REASON_NAMES = {
     REASON_COOLDOWN: "Pair is still inside its post-loss/per-pair cooldown window.",
     REASON_MAX_EXPOSURE: "Buying would breach the single-coin portfolio exposure cap.",
     REASON_EMPTY_BOOK: "Order book has no usable bid or ask levels.",
-    REASON_STALE_BOOK: "Order book snapshot is older than the configured max age, or has no timestamp when age checking is enabled.",
+    REASON_STALE_BOOK: "Order book snapshot or trusted fetch timestamp is older than the configured max age.",
+    REASON_UNVERIFIABLE_BOOK: "Order book snapshot has no exchange timestamp and no trusted fetch timestamp was provided.",
     REASON_WIDE_SPREAD: "Best bid/ask spread exceeds the configured maximum.",
     REASON_HIGH_SLIPPAGE: "Estimated market-buy slippage exceeds the configured maximum.",
     REASON_THIN_DEPTH: "Near-touch ask depth is below the configured multiple of order size.",
@@ -95,20 +97,39 @@ def _now_ts(now: datetime | None = None) -> float:
     return dt.timestamp()
 
 
+def _timestamp_seconds(raw: Any) -> float | None:
+    if isinstance(raw, datetime):
+        dt = raw if raw.tzinfo else raw.replace(tzinfo=timezone.utc)
+        return dt.timestamp()
+    if isinstance(raw, str):
+        try:
+            return datetime.fromisoformat(raw.replace("Z", "+00:00")).timestamp()
+        except ValueError:
+            raw = _as_float(raw, 0.0)
+    value = _as_float(raw, 0.0)
+    if value <= 0:
+        return None
+    return value / 1000.0 if value > 10_000_000_000 else value
+
+
 def _book_timestamp_seconds(order_book: Mapping[str, Any]) -> float | None:
     for key in ("timestamp", "time", "event_time", "E", "lastUpdateTime", "updated_at"):
         if key not in order_book:
             continue
-        raw = order_book.get(key)
-        if isinstance(raw, str):
-            try:
-                return datetime.fromisoformat(raw.replace("Z", "+00:00")).timestamp()
-            except ValueError:
-                raw = _as_float(raw, 0.0)
-        value = _as_float(raw, 0.0)
-        if value <= 0:
-            continue
-        return value / 1000.0 if value > 10_000_000_000 else value
+        value = _timestamp_seconds(order_book.get(key))
+        if value is not None:
+            return value
+    return None
+
+
+def _trusted_fetch_timestamp_seconds(order_book: Mapping[str, Any], trusted_fetch_timestamp: Any = None) -> float | None:
+    if trusted_fetch_timestamp is not None:
+        return _timestamp_seconds(trusted_fetch_timestamp)
+    for key in ("trusted_fetch_timestamp", "trusted_fetched_at"):
+        if key in order_book:
+            value = _timestamp_seconds(order_book.get(key))
+            if value is not None:
+                return value
     return None
 
 
@@ -132,16 +153,22 @@ def evaluate_order_book_gate(
     config: ExecutionRiskConfig,
     *,
     now: datetime | None = None,
+    trusted_fetch_timestamp: Any = None,
 ) -> tuple[list[str], dict[str, Any]]:
     metrics: dict[str, Any] = {"trade_notional_usdt": round(float(trade_notional_usdt), 4)}
     if not order_book:
         return ([REASON_EMPTY_BOOK] if config.fail_closed_on_missing_book else []), metrics
 
     ts = _book_timestamp_seconds(order_book)
+    timestamp_source = "order_book"
+    if ts is None:
+        ts = _trusted_fetch_timestamp_seconds(order_book, trusted_fetch_timestamp)
+        timestamp_source = "trusted_fetch_timestamp" if ts is not None else "missing"
     if config.max_order_book_age_seconds is not None:
+        metrics["order_book_timestamp_source"] = timestamp_source
         if ts is None:
             metrics["order_book_age_seconds"] = None
-            return [REASON_STALE_BOOK], metrics
+            return [REASON_UNVERIFIABLE_BOOK], metrics
         age = max(0.0, _now_ts(now) - ts)
         metrics["order_book_age_seconds"] = round(age, 3)
         if age > config.max_order_book_age_seconds:
@@ -196,6 +223,7 @@ def evaluate_execution_gate(
     config: ExecutionRiskConfig | None = None,
     state: ExecutionRiskState | None = None,
     now: datetime | None = None,
+    trusted_fetch_timestamp: Any = None,
 ) -> GateDecision:
     """Return allow/deny for a proposed execution action.
 
@@ -230,7 +258,14 @@ def evaluate_execution_gate(
     if projected_exposure >= cfg.max_single_coin_exposure_pct:
         reasons.append(REASON_MAX_EXPOSURE)
 
-    book_reasons, book_metrics = evaluate_order_book_gate(normalized_symbol, order_book, trade_notional_usdt, cfg, now=now)
+    book_reasons, book_metrics = evaluate_order_book_gate(
+        normalized_symbol,
+        order_book,
+        trade_notional_usdt,
+        cfg,
+        now=now,
+        trusted_fetch_timestamp=trusted_fetch_timestamp,
+    )
     reasons.extend(book_reasons)
     metrics.update(book_metrics)
     unique_reasons = tuple(dict.fromkeys(reasons))
