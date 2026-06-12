@@ -90,6 +90,14 @@ class ExecutionRiskGateTests(unittest.TestCase):
         self.assertIn(REASON_MAX_EXPOSURE, decision.reasons)
         self.assertGreaterEqual(decision.metrics["projected_coin_exposure_pct"], 20.0)
 
+    def test_projected_exposure_uses_normalized_state_symbol(self):
+        state = ExecutionRiskState(portfolio_total_value_usdt=1000, coin_exposure_pct={"TESTUSDT": 19.9})
+        decision = evaluate_execution_gate(action="buy", symbol="TEST/USDT", trade_notional_usdt=10, order_book=self.liquid_book(), config=self.config, state=state, now=self.now)
+        self.assertFalse(decision.allowed)
+        self.assertIn(REASON_MAX_EXPOSURE, decision.reasons)
+        self.assertEqual(decision.metrics["current_coin_exposure_pct"], 19.9)
+        self.assertGreaterEqual(decision.metrics["projected_coin_exposure_pct"], 20.0)
+
     def test_exit_and_state_save_allowed_while_buy_disabled(self):
         state = ExecutionRiskState(buy_disabled=True, daily_loss_pct=99, portfolio_drawdown_pct=99, portfolio_total_value_usdt=100, coin_exposure_pct={"TEST": 99}, cooldown_pairs=("TEST",))
         buy = evaluate_execution_gate(action="buy", symbol="TEST", trade_notional_usdt=10, order_book=self.liquid_book(), config=self.config, state=state, now=self.now)

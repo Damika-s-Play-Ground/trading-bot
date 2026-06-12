@@ -97,6 +97,17 @@ def _now_ts(now: datetime | None = None) -> float:
     return dt.timestamp()
 
 
+def _normalized_symbol(symbol: Any) -> str:
+    return str(symbol).upper().replace("/USDT", "").replace("USDT", "")
+
+
+def _coin_exposure_pct(exposures: Mapping[str, float], normalized_symbol: str) -> float:
+    for raw_symbol, exposure_pct in exposures.items():
+        if _normalized_symbol(raw_symbol) == normalized_symbol:
+            return _as_float(exposure_pct, 0.0)
+    return 0.0
+
+
 def _timestamp_seconds(raw: Any) -> float | None:
     if isinstance(raw, datetime):
         dt = raw if raw.tzinfo else raw.replace(tzinfo=timezone.utc)
@@ -233,7 +244,7 @@ def evaluate_execution_gate(
     cfg = config or ExecutionRiskConfig()
     st = state or ExecutionRiskState()
     normalized_action = action.lower().strip()
-    normalized_symbol = symbol.upper().replace("/USDT", "").replace("USDT", "")
+    normalized_symbol = _normalized_symbol(symbol)
 
     if normalized_action in EXIT_ACTIONS or normalized_action not in BUY_ACTIONS:
         return GateDecision(True, normalized_action, normalized_symbol, metrics={"bypass": "non_buy_action"})
@@ -246,10 +257,10 @@ def evaluate_execution_gate(
         reasons.append(REASON_DAILY_LOSS_LOCK)
     if st.portfolio_drawdown_pct >= cfg.max_portfolio_drawdown_pct:
         reasons.append(REASON_PORTFOLIO_DRAWDOWN_LOCK)
-    if normalized_symbol in {str(pair).upper().replace("/USDT", "").replace("USDT", "") for pair in st.cooldown_pairs}:
+    if normalized_symbol in {_normalized_symbol(pair) for pair in st.cooldown_pairs}:
         reasons.append(REASON_COOLDOWN)
 
-    current_exposure = _as_float(st.coin_exposure_pct.get(normalized_symbol, 0.0), 0.0)
+    current_exposure = _coin_exposure_pct(st.coin_exposure_pct, normalized_symbol)
     projected_exposure = current_exposure
     if st.portfolio_total_value_usdt > 0 and trade_notional_usdt > 0:
         projected_exposure = current_exposure + (trade_notional_usdt / st.portfolio_total_value_usdt * 100.0)
